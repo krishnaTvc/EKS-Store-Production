@@ -8,14 +8,16 @@ FROM nginxinc/nginx-unprivileged:1.27-alpine
 LABEL maintainer="EKS Beverage Store Team"
 LABEL description="Responsive frontend web interface with unprivileged Nginx reverse proxy for EKS"
 
-# Remove default Nginx welcome assets
-RUN rm -rf /usr/share/nginx/html/*
+# Switch to root temporarily to remove default HTML files and set directory permissions
+USER root
+RUN rm -rf /usr/share/nginx/html/* && chown -R 101:101 /usr/share/nginx/html
+USER 101
 
 # Copy static frontend web files
-COPY --chown=nginx:nginx public/ /usr/share/nginx/html/
+COPY --chown=101:101 public/ /usr/share/nginx/html/
 
 # Copy custom reverse proxy configuration
-COPY --chown=nginx:nginx nginx.conf /etc/nginx/conf.d/default.conf
+COPY --chown=101:101 nginx.conf /etc/nginx/conf.d/default.conf
 
 # Expose unprivileged port 8080
 EXPOSE 8080
