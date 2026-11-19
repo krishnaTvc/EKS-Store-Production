@@ -26,6 +26,22 @@ provider "aws" {
 
 data "aws_caller_identity" "current" {}
 
+# Auto-discover DB subnet group and security group from network stack if not explicitly provided
+data "aws_db_subnet_group" "rds" {
+  count = var.rds_subnet_group_name == "" ? 1 : 0
+  name  = "${var.project_name}-rds-subnet-group-${var.environment}"
+}
+
+data "aws_security_group" "rds" {
+  count = var.rds_security_group_id == "" ? 1 : 0
+  name  = "${var.project_name}-rds-sg-${var.environment}"
+}
+
+locals {
+  resolved_rds_subnet_group_name = var.rds_subnet_group_name != "" ? var.rds_subnet_group_name : data.aws_db_subnet_group.rds[0].name
+  resolved_rds_security_group_id = var.rds_security_group_id != "" ? var.rds_security_group_id : data.aws_security_group.rds[0].id
+}
+
 # 1. Random passwords for RDS master and application users
 resource "random_password" "rds_master_password" {
   length           = 24
@@ -62,8 +78,8 @@ resource "aws_db_instance" "postgres" {
   password = random_password.rds_master_password.result
   port     = 5432
 
-  db_subnet_group_name   = var.rds_subnet_group_name
-  vpc_security_group_ids = [var.rds_security_group_id]
+  db_subnet_group_name   = local.resolved_rds_subnet_group_name
+  vpc_security_group_ids = [local.resolved_rds_security_group_id]
   publicly_accessible    = false
 
   backup_retention_period    = 7

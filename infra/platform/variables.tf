@@ -53,38 +53,45 @@ variable "node_max_size" {
 }
 
 variable "vpc_id" {
-  description = "VPC ID from network stack"
+  description = "VPC ID from network stack (auto-discovered if empty)"
   type        = string
+  default     = ""
 }
 
 variable "private_subnet_ids" {
-  description = "Private application subnet IDs from network stack"
+  description = "Private application subnet IDs from network stack (auto-discovered if empty)"
   type        = list(string)
+  default     = []
 }
 
 variable "eks_nodes_security_group_id" {
-  description = "EKS worker nodes security group ID from network stack"
+  description = "EKS worker nodes security group ID from network stack (auto-discovered if empty)"
   type        = string
+  default     = ""
 }
 
 variable "assets_bucket_arn" {
-  description = "ARN of S3 assets bucket from data stack"
+  description = "ARN of S3 assets bucket from data stack (auto-discovered if empty)"
   type        = string
+  default     = ""
 }
 
 variable "catalog_db_secret_arn" {
-  description = "ARN of catalog database secret from data stack"
+  description = "ARN of catalog database secret from data stack (auto-discovered if empty)"
   type        = string
+  default     = ""
 }
 
 variable "order_db_secret_arn" {
-  description = "ARN of order database secret from data stack"
+  description = "ARN of order database secret from data stack (auto-discovered if empty)"
   type        = string
+  default     = ""
 }
 
 variable "rds_master_secret_arn" {
-  description = "ARN of RDS master credentials secret from data stack"
+  description = "ARN of RDS master credentials secret from data stack (auto-discovered if empty)"
   type        = string
+  default     = ""
 }
 
 variable "github_actions_role_arn" {

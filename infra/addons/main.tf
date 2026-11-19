@@ -28,9 +28,31 @@ provider "aws" {
   }
 }
 
+data "aws_caller_identity" "current" {}
+
+data "aws_eks_cluster" "cluster" {
+  count = (var.cluster_endpoint == "" || var.cluster_certificate_authority_data == "" || var.oidc_provider_url == "") ? 1 : 0
+  name  = var.cluster_name
+}
+
+data "aws_vpc" "main" {
+  count = var.vpc_id == "" ? 1 : 0
+  tags = {
+    Name = "${var.project_name}-vpc-${var.environment}"
+  }
+}
+
+locals {
+  resolved_cluster_endpoint = var.cluster_endpoint != "" ? var.cluster_endpoint : (length(data.aws_eks_cluster.cluster) > 0 ? data.aws_eks_cluster.cluster[0].endpoint : "https://dummy.eks.amazonaws.com")
+  resolved_cluster_ca       = var.cluster_certificate_authority_data != "" ? var.cluster_certificate_authority_data : (length(data.aws_eks_cluster.cluster) > 0 ? data.aws_eks_cluster.cluster[0].certificate_authority[0].data : "ZHVtbXk=")
+  resolved_oidc_url         = var.oidc_provider_url != "" ? var.oidc_provider_url : (length(data.aws_eks_cluster.cluster) > 0 ? data.aws_eks_cluster.cluster[0].identity[0].oidc[0].issuer : "https://oidc.eks.eu-north-1.amazonaws.com/id/DUMMY")
+  resolved_oidc_arn         = var.oidc_provider_arn != "" ? var.oidc_provider_arn : "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/${replace(local.resolved_oidc_url, "https://", "")}"
+  resolved_vpc_id           = var.vpc_id != "" ? var.vpc_id : (length(data.aws_vpc.main) > 0 ? data.aws_vpc.main[0].id : "")
+}
+
 provider "kubernetes" {
-  host                   = var.cluster_endpoint
-  cluster_ca_certificate = base64decode(var.cluster_certificate_authority_data)
+  host                   = local.resolved_cluster_endpoint
+  cluster_ca_certificate = base64decode(local.resolved_cluster_ca)
   exec {
     api_version = "client.authentication.k8s.io/v1beta1"
     args        = ["eks", "get-token", "--cluster-name", var.cluster_name]
@@ -40,8 +62,8 @@ provider "kubernetes" {
 
 provider "helm" {
   kubernetes {
-    host                   = var.cluster_endpoint
-    cluster_ca_certificate = base64decode(var.cluster_certificate_authority_data)
+    host                   = local.resolved_cluster_endpoint
+    cluster_ca_certificate = base64decode(local.resolved_cluster_ca)
     exec {
       api_version = "client.authentication.k8s.io/v1beta1"
       args        = ["eks", "get-token", "--cluster-name", var.cluster_name]
@@ -76,12 +98,12 @@ resource "aws_iam_role" "aws_load_balancer_controller" {
       {
         Effect = "Allow"
         Principal = {
-          Federated = var.oidc_provider_arn
+          Federated = local.resolved_oidc_arn
         }
         Action = "sts:AssumeRoleWithWebIdentity"
         Condition = {
           StringEquals = {
-            "${replace(var.oidc_provider_url, "https://", "")}:sub" = "system:serviceaccount:kube-system:aws-load-balancer-controller"
+            "${replace(local.resolved_oidc_url, "https://", "")}:sub" = "system:serviceaccount:kube-system:aws-load-balancer-controller"
           }
         }
       }
@@ -136,7 +158,7 @@ resource "helm_release" "aws_load_balancer_controller" {
 
   set {
     name  = "vpcId"
-    value = var.vpc_id
+    value = local.resolved_vpc_id
   }
 
   depends_on = [

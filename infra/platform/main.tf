@@ -26,6 +26,63 @@ provider "aws" {
 
 data "aws_caller_identity" "current" {}
 
+# Auto-discover VPC, Subnets, SGs, and Secrets from previous stacks if not explicitly passed
+data "aws_vpc" "main" {
+  count = var.vpc_id == "" ? 1 : 0
+  tags = {
+    Name = "${var.project_name}-vpc-${var.environment}"
+  }
+}
+
+locals {
+  resolved_vpc_id = var.vpc_id != "" ? var.vpc_id : data.aws_vpc.main[0].id
+}
+
+data "aws_subnets" "private" {
+  count = length(var.private_subnet_ids) == 0 ? 1 : 0
+  filter {
+    name   = "vpc-id"
+    values = [local.resolved_vpc_id]
+  }
+  tags = {
+    "kubernetes.io/role/internal-elb" = "1"
+  }
+}
+
+data "aws_security_group" "eks_nodes" {
+  count = var.eks_nodes_security_group_id == "" ? 1 : 0
+  name  = "${var.project_name}-eks-nodes-sg-${var.environment}"
+}
+
+data "aws_s3_bucket" "assets" {
+  count  = var.assets_bucket_arn == "" ? 1 : 0
+  bucket = "${var.project_name}-assets-${var.environment}-${data.aws_caller_identity.current.account_id}"
+}
+
+data "aws_secretsmanager_secret" "catalog_db" {
+  count = var.catalog_db_secret_arn == "" ? 1 : 0
+  name  = "${var.project_name}/${var.environment}/rds/catalog"
+}
+
+data "aws_secretsmanager_secret" "order_db" {
+  count = var.order_db_secret_arn == "" ? 1 : 0
+  name  = "${var.project_name}/${var.environment}/rds/order"
+}
+
+data "aws_secretsmanager_secret" "rds_master" {
+  count = var.rds_master_secret_arn == "" ? 1 : 0
+  name  = "${var.project_name}/${var.environment}/rds/master"
+}
+
+locals {
+  resolved_private_subnet_ids          = length(var.private_subnet_ids) > 0 ? var.private_subnet_ids : data.aws_subnets.private[0].ids
+  resolved_eks_nodes_security_group_id = var.eks_nodes_security_group_id != "" ? var.eks_nodes_security_group_id : data.aws_security_group.eks_nodes[0].id
+  resolved_assets_bucket_arn           = var.assets_bucket_arn != "" ? var.assets_bucket_arn : data.aws_s3_bucket.assets[0].arn
+  resolved_catalog_db_secret_arn       = var.catalog_db_secret_arn != "" ? var.catalog_db_secret_arn : data.aws_secretsmanager_secret.catalog_db[0].arn
+  resolved_order_db_secret_arn         = var.order_db_secret_arn != "" ? var.order_db_secret_arn : data.aws_secretsmanager_secret.order_db[0].arn
+  resolved_rds_master_secret_arn       = var.rds_master_secret_arn != "" ? var.rds_master_secret_arn : data.aws_secretsmanager_secret.rds_master[0].arn
+}
+
 # 1. EKS Cluster IAM Role
 resource "aws_iam_role" "cluster" {
   name = "${var.project_name}-eks-cluster-role-${var.environment}"
@@ -61,10 +118,10 @@ resource "aws_eks_cluster" "main" {
   version  = var.kubernetes_version
 
   vpc_config {
-    subnet_ids              = var.private_subnet_ids
+    subnet_ids              = local.resolved_private_subnet_ids
     endpoint_private_access = true
     endpoint_public_access  = true
-    security_group_ids      = [var.eks_nodes_security_group_id]
+    security_group_ids      = [local.resolved_eks_nodes_security_group_id]
   }
 
   access_config {
@@ -167,7 +224,7 @@ resource "aws_eks_node_group" "main" {
   cluster_name    = aws_eks_cluster.main.name
   node_group_name = "${var.project_name}-nodes-${var.environment}"
   node_role_arn   = aws_iam_role.node.arn
-  subnet_ids      = var.private_subnet_ids
+  subnet_ids      = local.resolved_private_subnet_ids
 
   scaling_config {
     desired_size = var.node_desired_size
@@ -232,7 +289,7 @@ resource "aws_iam_policy" "catalog_service" {
         Action = [
           "s3:GetObject"
         ]
-        Resource = "${var.assets_bucket_arn}/*"
+        Resource = "${local.resolved_assets_bucket_arn}/*"
       },
       {
         Sid    = "ReadCatalogDatabaseSecret"
@@ -241,7 +298,7 @@ resource "aws_iam_policy" "catalog_service" {
           "secretsmanager:GetSecretValue",
           "secretsmanager:DescribeSecret"
         ]
-        Resource = var.catalog_db_secret_arn
+        Resource = local.resolved_catalog_db_secret_arn
       }
     ]
   })
@@ -289,7 +346,7 @@ resource "aws_iam_policy" "order_service" {
           "secretsmanager:GetSecretValue",
           "secretsmanager:DescribeSecret"
         ]
-        Resource = var.order_db_secret_arn
+        Resource = local.resolved_order_db_secret_arn
       }
     ]
   })
@@ -338,9 +395,9 @@ resource "aws_iam_policy" "db_job" {
           "secretsmanager:DescribeSecret"
         ]
         Resource = [
-          var.rds_master_secret_arn,
-          var.catalog_db_secret_arn,
-          var.order_db_secret_arn
+          local.resolved_rds_master_secret_arn,
+          local.resolved_catalog_db_secret_arn,
+          local.resolved_order_db_secret_arn
         ]
       }
     ]

@@ -35,11 +35,13 @@ variable "deletion_protection" {
 }
 
 variable "rds_subnet_group_name" {
-  description = "Name of the RDS DB subnet group from the network stack"
+  description = "Name of the RDS DB subnet group from the network stack (auto-discovered if empty)"
   type        = string
+  default     = ""
 }
 
 variable "rds_security_group_id" {
-  description = "Security group ID for RDS from the network stack"
+  description = "Security group ID for RDS from the network stack (auto-discovered if empty)"
   type        = string
+  default     = ""
 }
