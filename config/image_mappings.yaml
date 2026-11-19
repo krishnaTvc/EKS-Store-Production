@@ -1,0 +1,93 @@
+placeholder_key: catalog/placeholder.png
+brand_mappings:
+  '1139':
+    category: whisky
+    brand_code: '1139'
+    product_name: SEAGRAM'S BLENDERS PRIDE EXCLUSIVE PREMIUM WHISKY
+    s3_key: catalog/whisky/blenders-pride.jpeg
+  '1138':
+    category: whisky
+    brand_code: '1138'
+    product_name: SEAGRAM'S ROYAL STAG CLASSIC WHISKY
+    s3_key: catalog/whisky/royal-stag.jpg
+  '0277':
+    category: whisky
+    brand_code: '0277'
+    product_name: STERLING RESERVE B10 ORIGINAL BLENDED WHISKY
+    s3_key: catalog/whisky/sterling-reserve-b10.jpeg
+  '1119':
+    category: whisky
+    brand_code: '1119'
+    product_name: JOHNNIE WALKER RED LABEL BLENDED SCOTCH WHISKY
+    s3_key: catalog/whisky/johnnie-walker-red-label.jpg
+  '1127':
+    category: whisky
+    brand_code: '1127'
+    product_name: JAMESON IRISH WHISKY
+    s3_key: catalog/whisky/jameson-irish.png
+  '1126':
+    category: whisky
+    brand_code: '1126'
+    product_name: BALLANTINE'S FINEST BLENDED SCOTCH WHISKY
+    s3_key: catalog/whisky/ballantines-finest.jpg
+  '1092':
+    category: whisky
+    brand_code: '1092'
+    product_name: Dewar's Blended Scotch Whisky White Label
+    s3_key: catalog/whisky/dewars-white-label.jpg
+  '1109':
+    category: brandy
+    brand_code: '1109'
+    product_name: TI MANSION HOUSE RAREST SPIRIT FRENCH BRANDY
+    s3_key: catalog/brandy/mansion-house.jpg
+  0519:
+    category: brandy
+    brand_code: 0519
+    product_name: MORPHEUS XO BLENDED RESERVE BRANDY
+    s3_key: catalog/brandy/morpheus-xo.jpg
+  '1038':
+    category: rum
+    brand_code: '1038'
+    product_name: OLD MONK EXTRA SPECIAL XXX RARE RUM
+    s3_key: catalog/rum/old-monk.jpg
+  '1101':
+    category: rum
+    brand_code: '1101'
+    product_name: Bacardi Carta Blanca Ultra Platinum Superior White Rum
+    s3_key: catalog/rum/bacardi-carta-blanca.jpg
+  '1151':
+    category: vodka
+    brand_code: '1151'
+    product_name: MAGIC MOMENTS REMIX GREEN APPLE PREMIUM FLAVOURED VODKA
+    s3_key: catalog/vodka/magic-moments-green-apple.jpg
+  '1122':
+    category: vodka
+    brand_code: '1122'
+    product_name: ABSOLUT VODKA
+    s3_key: catalog/vodka/absolut-vodka.png
+  0901:
+    category: wine
+    brand_code: 0901
+    product_name: FRATELLI SHIRAZ
+    s3_key: catalog/wine/fratelli-shiraz.png
+  '1128':
+    category: gin
+    brand_code: '1128'
+    product_name: BEEFEATER LONDON DRY GIN
+    s3_key: catalog/gin/beefeater-london-dry.jpg
+  '5118':
+    category: beer
+    brand_code: '5118'
+    product_name: KINGFISHER ULTRA SUPER PREMIUM LAGER BEER
+    s3_key: catalog/beer/kingfisher-ultra.jpg
+  '5120':
+    category: beer
+    brand_code: '5120'
+    product_name: CARLSBERG PREMIUM ELEPHANT STRONG PILSNER BEER
+    s3_key: catalog/beer/carlsberg-elephant.jpg
+  '1014':
+    category: ready-to-drink
+    brand_code: '1014'
+    product_name: Breezer Platinum Tangy Cranberry
+    s3_key: catalog/ready-to-drink/bacardi-breezer.jpg
+product_overrides: {}

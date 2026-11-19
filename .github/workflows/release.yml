@@ -1,0 +1,187 @@
+name: Deploy Production EKS Store
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target deployment environment profile"
+        required: true
+        default: "lab"
+        type: choice
+        options:
+          - lab
+          - production
+
+concurrency:
+  group: deployment-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: eu-north-1
+  PROJECT_NAME: eks-store
+  ENVIRONMENT: ${{ inputs.environment || 'lab' }}
+
+jobs:
+  validate:
+    name: Code & Test Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Execute Pytest Suite
+        run: |
+          pytest -v
+
+  build-and-publish:
+    name: Build & Publish ECR Images
+    needs: validate
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.vars.outputs.sha_short }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Compute Short Git SHA
+        id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_GITHUB_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & Push Frontend Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.PROJECT_NAME }}-frontend:${{ steps.vars.outputs.sha_short }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.PROJECT_NAME }}-frontend:latest
+
+      - name: Build & Push Catalog Service Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./catalog-service
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.PROJECT_NAME }}-catalog:${{ steps.vars.outputs.sha_short }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.PROJECT_NAME }}-catalog:latest
+
+      - name: Build & Push Order Service Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./order-service
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.PROJECT_NAME }}-orders:${{ steps.vars.outputs.sha_short }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.PROJECT_NAME }}-orders:latest
+
+      - name: Build & Push Seed & Migration Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.seed
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.PROJECT_NAME }}-seed:${{ steps.vars.outputs.sha_short }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.PROJECT_NAME }}-seed:latest
+
+  deploy:
+    name: Helm Rollout & Live Smoke Test
+    needs: [build-and-publish]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_GITHUB_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update Kubeconfig
+        run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "v3.15.0"
+
+      - name: Deploy Application Helm Chart
+        env:
+          TAG: ${{ needs.build-and-publish.outputs.image_tag }}
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          helm upgrade --install eks-store helm/eks-store \
+            --namespace eks-store --create-namespace \
+            --values helm/eks-store/values.yaml \
+            --values helm/eks-store/values-${{ env.ENVIRONMENT }}.yaml \
+            --set images.frontend.tag=${{ env.TAG }} \
+            --set images.catalog.tag=${{ env.TAG }} \
+            --set images.orders.tag=${{ env.TAG }} \
+            --set images.seed.tag=${{ env.TAG }} \
+            --wait --timeout 10m
+
+      - name: Set up Python for Smoke Testing
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Test Client
+        run: pip install httpx
+
+      - name: Await ALB Ingress Ready & Execute Smoke Tests
+        run: |
+          echo "Resolving ALB Ingress Hostname..."
+          ALB_HOSTNAME=""
+          for i in {1..30}; do
+            ALB_HOSTNAME=$(kubectl get ingress eks-store-ingress -n eks-store -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+            if [ -n "$ALB_HOSTNAME" ]; then
+              break
+            fi
+            echo "Waiting for ALB hostname... ($i/30)"
+            sleep 10
+          done
+
+          if [ -z "$ALB_HOSTNAME" ]; then
+            echo "ALB Ingress Hostname could not be resolved."
+            exit 1
+          fi
+
+          echo "ALB Hostname: $ALB_HOSTNAME"
+          python scripts/smoke_test.py --url "http://$ALB_HOSTNAME"

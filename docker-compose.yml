@@ -1,0 +1,98 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: beverage-store-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - store_net
+
+  catalog-service:
+    build:
+      context: ./catalog-service
+      dockerfile: Dockerfile
+    container_name: beverage-store-catalog
+    environment:
+      DATABASE_URL: postgresql+psycopg://catalog_user:catalog_pass@postgres:5432/catalog
+      IMAGE_MODE: local
+      LOCAL_IMAGE_BASE_URL: /assets
+      PORT: 8001
+      LOG_LEVEL: INFO
+      LOCAL_ASSETS_DIR: /app/assets
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./assets:/app/assets:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - store_net
+
+  order-service:
+    build:
+      context: ./order-service
+      dockerfile: Dockerfile
+    container_name: beverage-store-orders
+    environment:
+      DATABASE_URL: postgresql+psycopg://order_user:order_pass@postgres:5432/orders
+      CATALOG_SERVICE_URL: http://catalog-service:8001
+      CATALOG_TIMEOUT_SECONDS: 5.0
+      PORT: 8002
+      LOG_LEVEL: INFO
+    ports:
+      - "8002:8002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      catalog-service:
+        condition: service_started
+    networks:
+      - store_net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: beverage-store-frontend
+    ports:
+      - "3000:8080"
+    depends_on:
+      - catalog-service
+      - order-service
+    networks:
+      - store_net
+
+  catalog-importer:
+    build:
+      context: .
+      dockerfile: Dockerfile.seed
+    container_name: beverage-store-catalog-importer
+    environment:
+      DATABASE_URL: postgresql+psycopg://catalog_user:catalog_pass@postgres:5432/catalog
+    command: ["python", "scripts/import_catalog.py", "--create-schema"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - store_net
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  store_net:
+    driver: bridge
+

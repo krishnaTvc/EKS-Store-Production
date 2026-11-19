@@ -1,0 +1,272 @@
+[
+  {
+    "local_path": "assets/catalog/whisky/blenders-pride.jpeg",
+    "s3_object_key": "catalog/whisky/blenders-pride.jpeg",
+    "category": "whisky",
+    "brand_code": "1139",
+    "product_name": "SEAGRAM'S BLENDERS PRIDE EXCLUSIVE PREMIUM WHISKY",
+    "source_url": "User Supplied (catalog-db-images/Blenders.jpeg)",
+    "license": "Supplied demo asset",
+    "is_valid_image": true,
+    "image_details": {
+      "format": "JPEG",
+      "width": 335,
+      "height": 597
+    }
+  },
+  {
+    "local_path": "assets/catalog/whisky/royal-stag.jpg",
+    "s3_object_key": "catalog/whisky/royal-stag.jpg",
+    "category": "whisky",
+    "brand_code": "1138",
+    "product_name": "SEAGRAM'S ROYAL STAG CLASSIC WHISKY",
+    "source_url": "User Supplied (catalog-db-images/stag.jpg)",
+    "license": "Supplied demo asset",
+    "is_valid_image": true,
+    "image_details": {
+      "format": "JPEG",
+      "width": 736,
+      "height": 1635
+    }
+  },
+  {
+    "local_path": "assets/catalog/whisky/sterling-reserve-b10.jpeg",
+    "s3_object_key": "catalog/whisky/sterling-reserve-b10.jpeg",
+    "category": "whisky",
+    "brand_code": "0277",
+    "product_name": "STERLING RESERVE B10 ORIGINAL BLENDED WHISKY",
+    "source_url": "User Supplied (catalog-db-images/sterling.jpeg)",
+    "license": "Supplied demo asset",
+    "is_valid_image": true,
+    "image_details": {
+      "format": "JPEG",
+      "width": 400,
+      "height": 500
+    }
+  },
+  {
+    "local_path": "assets/catalog/whisky/johnnie-walker-red-label.jpg",
+    "s3_object_key": "catalog/whisky/johnnie-walker-red-label.jpg",
+    "category": "whisky",
+    "brand_code": "1119",
+    "product_name": "JOHNNIE WALKER RED LABEL BLENDED SCOTCH WHISKY",
+    "source_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Johnnie_Walker_Red_Label.jpg?width=600",
+    "license": "CC BY-SA 3.0 (Wikimedia Commons)",
+    "is_valid_image": true,
+    "image_details": {
+      "format": "JPEG",
+      "width": 960,
+      "height": 1370
+    }
+  },
+  {
+    "local_path": "assets/catalog/whisky/jameson-irish.png",
+    "s3_object_key": "catalog/whisky/jameson-irish.png",
+    "category": "whisky",
+    "brand_code": "1127",
+    "product_name": "JAMESON IRISH WHISKY",
+    "source_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Jameson_Irish_Whiskey.PNG?width=600",
+    "license": "CC BY-SA 2.0 (Wikimedia Commons)",
+    "is_valid_image": true,
+    "image_details": {
+      "format": "PNG",
+      "width": 576,
+      "height": 666
+    }
+  },
+  {
+    "local_path": "assets/catalog/whisky/ballantines-finest.jpg",
+    "s3_object_key": "catalog/whisky/ballantines-finest.jpg",
+    "category": "whisky",
+    "brand_code": "1126",
+    "product_name": "BALLANTINE'S FINEST BLENDED SCOTCH WHISKY",
+    "source_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Ballantines_Scotch_Whisky_PL.JPG?width=600",
+    "license": "CC BY-SA 3.0 (Wikimedia Commons)",
+    "is_valid_image": true,
+    "image_details": {
+      "format": "JPEG",
+      "width": 960,
+      "height": 1445
+    }
+  },
+  {
+    "local_path": "assets/catalog/whisky/dewars-white-label.jpg",
+    "s3_object_key": "catalog/whisky/dewars-white-label.jpg",
+    "category": "whisky",
+    "brand_code": "1092",
+    "product_name": "Dewar's Blended Scotch Whisky White Label",
+    "source_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Dewar%27s_White_Label_Scotch_Whisky.jpg?width=600",
+    "license": "CC BY-SA 3.0 (Wikimedia Commons)",
+    "is_valid_image": true,
+    "image_details": {
+      "format": "JPEG",
+      "width": 960,
+      "height": 1580
+    }
+  },
+  {
+    "local_path": "assets/catalog/brandy/mansion-house.jpg",
+    "s3_object_key": "catalog/brandy/mansion-house.jpg",
+    "category": "brandy",
+    "brand_code": "1109",
+    "product_name": "TI MANSION HOUSE RAREST SPIRIT FRENCH BRANDY",
+    "source_url": "https://tilind.com/wp-content/uploads/2025/05/MH-Core-600-x-600px.jpg",
+    "license": "Official Brand Visual (Tilaknagar Industries)",
+    "is_valid_image": true,
+    "image_details": {
+      "format": "JPEG",
+      "width": 603,
+      "height": 603
+    }
+  },
+  {
+    "local_path": "assets/catalog/brandy/morpheus-xo.jpg",
+    "s3_object_key": "catalog/brandy/morpheus-xo.jpg",
+    "category": "brandy",
+    "brand_code": "0519",
+    "product_name": "MORPHEUS XO BLENDED RESERVE BRANDY",
+    "source_url": "https://radicokhaitan.com/wp-content/uploads/2019/03/Morpheus-XO-1.jpg",
+    "license": "Official Brand Visual (Radico Khaitan)",
+    "is_valid_image": true,
+    "image_details": {
+      "format": "JPEG",
+      "width": 574,
+      "height": 779
+    }
+  },
+  {
+    "local_path": "assets/catalog/rum/old-monk.jpg",
+    "s3_object_key": "catalog/rum/old-monk.jpg",
+    "category": "rum",
+    "brand_code": "1038",
+    "product_name": "OLD MONK EXTRA SPECIAL XXX RARE RUM",
+    "source_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Old_monk_rum_bottle.jpg?width=600",
+    "license": "CC BY-SA 3.0 (Wikimedia Commons)",
+    "is_valid_image": true,
+    "image_details": {
+      "format": "JPEG",
+      "width": 960,
+      "height": 1285
+    }
+  },
+  {
+    "local_path": "assets/catalog/rum/bacardi-carta-blanca.jpg",
+    "s3_object_key": "catalog/rum/bacardi-carta-blanca.jpg",
+    "category": "rum",
+    "brand_code": "1101",
+    "product_name": "Bacardi Carta Blanca Ultra Platinum Superior White Rum",
+    "source_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Bacardi_%28on_white%29.jpg?width=600",
+    "license": "CC BY-SA 2.0 (Wikimedia Commons)",
+    "is_valid_image": true,
+    "image_details": {
+      "format": "JPEG",
+      "width": 635,
+      "height": 1276
+    }
+  },
+  {
+    "local_path": "assets/catalog/vodka/magic-moments-green-apple.jpg",
+    "s3_object_key": "catalog/vodka/magic-moments-green-apple.jpg",
+    "category": "vodka",
+    "brand_code": "1151",
+    "product_name": "MAGIC MOMENTS REMIX GREEN APPLE PREMIUM FLAVOURED VODKA",
+    "source_url": "https://radicokhaitan.com/wp-content/uploads/2019/03/MM-normal.jpg",
+    "license": "Official Brand Visual (Radico Khaitan)",
+    "is_valid_image": true,
+    "image_details": {
+      "format": "JPEG",
+      "width": 574,
+      "height": 779
+    }
+  },
+  {
+    "local_path": "assets/catalog/vodka/absolut-vodka.png",
+    "s3_object_key": "catalog/vodka/absolut-vodka.png",
+    "category": "vodka",
+    "brand_code": "1122",
+    "product_name": "ABSOLUT VODKA",
+    "source_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Absolut_vodka_bottle.png?width=600",
+    "license": "CC BY 3.0 (Wikimedia Commons)",
+    "is_valid_image": true,
+    "image_details": {
+      "format": "PNG",
+      "width": 960,
+      "height": 1440
+    }
+  },
+  {
+    "local_path": "assets/catalog/wine/fratelli-shiraz.png",
+    "s3_object_key": "catalog/wine/fratelli-shiraz.png",
+    "category": "wine",
+    "brand_code": "0901",
+    "product_name": "FRATELLI SHIRAZ",
+    "source_url": "http://fratelliwines.in/cdn/shop/files/Classic_Shiraz.png",
+    "license": "Official Brand Visual (Fratelli Wines)",
+    "is_valid_image": true,
+    "image_details": {
+      "format": "PNG",
+      "width": 1200,
+      "height": 1700
+    }
+  },
+  {
+    "local_path": "assets/catalog/gin/beefeater-london-dry.jpg",
+    "s3_object_key": "catalog/gin/beefeater-london-dry.jpg",
+    "category": "gin",
+    "brand_code": "1128",
+    "product_name": "BEEFEATER LONDON DRY GIN",
+    "source_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Beefeater_Gin.jpg?width=600",
+    "license": "Public Domain (Wikimedia Commons)",
+    "is_valid_image": true,
+    "image_details": {
+      "format": "JPEG",
+      "width": 960,
+      "height": 973
+    }
+  },
+  {
+    "local_path": "assets/catalog/beer/kingfisher-ultra.jpg",
+    "s3_object_key": "catalog/beer/kingfisher-ultra.jpg",
+    "category": "beer",
+    "brand_code": "5118",
+    "product_name": "KINGFISHER ULTRA SUPER PREMIUM LAGER BEER",
+    "source_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Kingfisher_beer_bottle.jpg?width=600",
+    "license": "CC BY-SA 3.0 (Wikimedia Commons)",
+    "is_valid_image": true,
+    "image_details": {
+      "format": "JPEG",
+      "width": 960,
+      "height": 1285
+    }
+  },
+  {
+    "local_path": "assets/catalog/beer/carlsberg-elephant.jpg",
+    "s3_object_key": "catalog/beer/carlsberg-elephant.jpg",
+    "category": "beer",
+    "brand_code": "5120",
+    "product_name": "CARLSBERG PREMIUM ELEPHANT STRONG PILSNER BEER",
+    "source_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Carlsberg_beer.jpg?width=600",
+    "license": "CC BY-SA 3.0 (Wikimedia Commons)",
+    "is_valid_image": true,
+    "image_details": {
+      "format": "JPEG",
+      "width": 856,
+      "height": 2107
+    }
+  },
+  {
+    "local_path": "assets/catalog/ready-to-drink/bacardi-breezer.jpg",
+    "s3_object_key": "catalog/ready-to-drink/bacardi-breezer.jpg",
+    "category": "ready-to-drink",
+    "brand_code": "1014",
+    "product_name": "Breezer Platinum Tangy Cranberry",
+    "source_url": "https://commons.wikimedia.org/wiki/Special:FilePath/Bacardi_Breezer_Bottles.jpg?width=600",
+    "license": "CC BY-SA 3.0 (Wikimedia Commons)",
+    "is_valid_image": true,
+    "image_details": {
+      "format": "JPEG",
+      "width": 960,
+      "height": 720
+    }
+  }
+]

@@ -1,0 +1,46 @@
+{{- if .Values.jobs.bootstrapDb.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "eks-store.fullname" . }}-bootstrap-db-{{ randAlphaNum 5 | lower }}
+  labels:
+    {{- include "eks-store.labels" . | nindent 4 }}
+    app.kubernetes.io/component: db-bootstrap
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  ttlSecondsAfterFinished: {{ .Values.jobs.bootstrapDb.ttlSecondsAfterFinished }}
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: db-bootstrap
+    spec:
+      serviceAccountName: db-job-sa
+      restartPolicy: OnFailure
+      containers:
+        - name: bootstrap-db
+          image: "{{ .Values.images.seed.repository }}:{{ .Values.images.seed.tag }}"
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["python", "scripts/bootstrap_databases.py"]
+          env:
+            - name: DATABASE_SECRET_DIR
+              value: "/mnt/secrets-store"
+          {{- if .Values.aws.secretsStore.enabled }}
+          volumeMounts:
+            - name: secrets-store
+              mountPath: "/mnt/secrets-store"
+              readOnly: true
+          {{- end }}
+      {{- if .Values.aws.secretsStore.enabled }}
+      volumes:
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ .Values.aws.secretsStore.secretProviderClassName }}
+      {{- end }}
+{{- end }}

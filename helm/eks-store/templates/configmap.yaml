@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: eks-store-config
+  labels:
+    {{- include "eks-store.labels" . | nindent 4 }}
+data:
+  APP_ENV: {{ .Values.global.environment | quote }}
+  AWS_REGION: {{ .Values.aws.region | quote }}
+  S3_BUCKET_NAME: {{ .Values.aws.s3.assetsBucketName | quote }}
+  IMAGE_MODE: {{ .Values.aws.s3.imageMode | quote }}
+  S3_PRESIGNED_EXPIRATION_SECONDS: {{ .Values.aws.s3.presignedExpirationSeconds | quote }}
+  CATALOG_SERVICE_URL: "http://catalog-service:8001"
+  CATALOG_TIMEOUT_SECONDS: {{ .Values.orders.catalogTimeoutSeconds | quote }}
+  CATALOG_LOG_LEVEL: {{ .Values.catalog.logLevel | quote }}
+  ORDER_LOG_LEVEL: {{ .Values.orders.logLevel | quote }}
+  CATALOG_DB_POOL_SIZE: {{ .Values.catalog.dbPoolSize | quote }}
+  CATALOG_DB_MAX_OVERFLOW: {{ .Values.catalog.dbMaxOverflow | quote }}
+  ORDER_DB_POOL_SIZE: {{ .Values.orders.dbPoolSize | quote }}
+  ORDER_DB_MAX_OVERFLOW: {{ .Values.orders.dbMaxOverflow | quote }}

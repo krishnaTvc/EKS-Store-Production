@@ -1,0 +1,23 @@
+{
+  "source_file": "dataset/dataset_for_eks.pdf",
+  "source_date": "2024-10-15",
+  "total_pages_scanned": 6,
+  "total_records_accepted": 185,
+  "total_records_rejected": 0,
+  "category_distribution": {
+    "whisky": 88,
+    "brandy": 44,
+    "rum": 8,
+    "vodka": 8,
+    "wine": 17,
+    "gin": 1,
+    "ready-to-drink": 4,
+    "beer": 15
+  },
+  "validation_summary": {
+    "all_product_codes_unique": true,
+    "all_sizes_positive": true,
+    "all_prices_non_negative": true,
+    "source_date": "2024-10-15"
+  }
+}

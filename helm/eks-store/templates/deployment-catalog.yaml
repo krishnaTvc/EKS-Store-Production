@@ -1,0 +1,132 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-service
+  labels:
+    {{- include "eks-store.labels" . | nindent 4 }}
+    app.kubernetes.io/name: catalog-service
+    app.kubernetes.io/component: catalog
+spec:
+  replicas: {{ .Values.catalog.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: catalog-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: catalog-service
+        app.kubernetes.io/component: catalog
+        environment: {{ .Values.global.environment }}
+    spec:
+      serviceAccountName: catalog-service-sa
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: {{ .Values.catalog.securityContext.runAsNonRoot }}
+        runAsUser: {{ .Values.catalog.securityContext.runAsUser }}
+      containers:
+        - name: catalog-service
+          image: "{{ .Values.images.catalog.repository }}:{{ .Values.images.catalog.tag }}"
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.catalog.containerPort }}
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: {{ .Values.catalog.securityContext.allowPrivilegeEscalation }}
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            {{- toYaml .Values.catalog.resources | nindent 12 }}
+          env:
+            - name: APP_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: eks-store-config
+                  key: APP_ENV
+            - name: AWS_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: eks-store-config
+                  key: AWS_REGION
+            - name: S3_BUCKET_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: eks-store-config
+                  key: S3_BUCKET_NAME
+            - name: IMAGE_MODE
+              valueFrom:
+                configMapKeyRef:
+                  name: eks-store-config
+                  key: IMAGE_MODE
+            - name: S3_PRESIGNED_EXPIRATION_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: eks-store-config
+                  key: S3_PRESIGNED_EXPIRATION_SECONDS
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: eks-store-config
+                  key: CATALOG_LOG_LEVEL
+            - name: DB_POOL_SIZE
+              valueFrom:
+                configMapKeyRef:
+                  name: eks-store-config
+                  key: CATALOG_DB_POOL_SIZE
+            - name: DB_MAX_OVERFLOW
+              valueFrom:
+                configMapKeyRef:
+                  name: eks-store-config
+                  key: CATALOG_DB_MAX_OVERFLOW
+            - name: DATABASE_SECRET_DIR
+              value: "/mnt/secrets-store"
+            {{- if .Values.aws.secretsStore.enabled }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: catalog-db-sync-secret
+                  key: DATABASE_URL
+                  optional: true
+            {{- end }}
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 10
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 2
+          {{- if .Values.aws.secretsStore.enabled }}
+          volumeMounts:
+            - name: secrets-store
+              mountPath: "/mnt/secrets-store"
+              readOnly: true
+          {{- end }}
+      {{- if .Values.aws.secretsStore.enabled }}
+      volumes:
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ .Values.aws.secretsStore.secretProviderClassName }}
+      {{- end }}

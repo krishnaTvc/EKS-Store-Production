@@ -1,0 +1,16 @@
+apiVersion: v2
+name: eks-store
+description: Production-grade Helm chart for EKS Beverage Store Microservices (Nginx UI, FastAPI Catalog, FastAPI Orders)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - aws
+  - eks
+  - fast-api
+  - microservices
+  - rds-postgresql
+  - s3
+maintainers:
+  - name: Krishna
+    email: krishna@example.com

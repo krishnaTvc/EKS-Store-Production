@@ -1,0 +1,121 @@
+name: Terraform Infrastructure Manager
+
+on:
+  workflow_dispatch:
+    inputs:
+      stack:
+        description: "Terraform stack to run"
+        required: true
+        type: choice
+        default: "all"
+        options:
+          - all
+          - network
+          - data
+          - platform
+          - addons
+      action:
+        description: "Action to execute"
+        required: true
+        type: choice
+        default: "apply"
+        options:
+          - plan
+          - apply
+          - destroy
+      environment:
+        description: "Target environment"
+        required: true
+        default: "lab"
+        type: choice
+        options:
+          - lab
+          - production
+      confirmation:
+        description: "Type 'CONFIRM' if action is 'destroy'"
+        required: false
+        default: ""
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: eu-north-1
+  PROJECT_NAME: eks-store
+  ENVIRONMENT: ${{ inputs.environment }}
+
+jobs:
+  terraform:
+    name: Terraform ${{ inputs.action }} on ${{ inputs.stack }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate Destroy Confirmation
+        if: ${{ inputs.action == 'destroy' }}
+        run: |
+          if [ "${{ inputs.confirmation }}" != "CONFIRM" ]; then
+            echo "Error: To destroy infrastructure, you must type 'CONFIRM' in the confirmation box."
+            exit 1
+          fi
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_GITHUB_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.8.5"
+
+      # Execute Individual Stack
+      - name: Run Terraform on Single Stack
+        if: ${{ inputs.stack != 'all' }}
+        run: |
+          STACK="infra/${{ inputs.stack }}"
+          echo "Processing stack: $STACK with action: ${{ inputs.action }}"
+          cd $STACK
+          terraform init
+          if [ "${{ inputs.action }}" == "plan" ]; then
+            terraform plan -var="environment=${{ env.ENVIRONMENT }}" -var="aws_region=${{ env.AWS_REGION }}"
+          elif [ "${{ inputs.action }}" == "apply" ]; then
+            terraform apply -auto-approve -var="environment=${{ env.ENVIRONMENT }}" -var="aws_region=${{ env.AWS_REGION }}"
+          elif [ "${{ inputs.action }}" == "destroy" ]; then
+            terraform destroy -auto-approve -var="environment=${{ env.ENVIRONMENT }}" -var="aws_region=${{ env.AWS_REGION }}"
+          fi
+
+      # Execute ALL Stacks in Order: Network -> Data -> Platform -> Addons
+      - name: Run Terraform on All Stacks (Apply / Plan)
+        if: ${{ inputs.stack == 'all' && inputs.action != 'destroy' }}
+        run: |
+          for STACK in network data platform addons; do
+            echo "========================================="
+            echo "==> Running Terraform in infra/$STACK..."
+            echo "========================================="
+            cd $GITHUB_WORKSPACE/infra/$STACK
+            terraform init
+            if [ "${{ inputs.action }}" == "plan" ]; then
+              terraform plan -var="environment=${{ env.ENVIRONMENT }}" -var="aws_region=${{ env.AWS_REGION }}"
+            else
+              terraform apply -auto-approve -var="environment=${{ env.ENVIRONMENT }}" -var="aws_region=${{ env.AWS_REGION }}"
+            fi
+          done
+
+      # Destroy ALL Stacks in Reverse Order: Addons -> Platform -> Data -> Network
+      - name: Destroy All Stacks
+        if: ${{ inputs.stack == 'all' && inputs.action == 'destroy' }}
+        run: |
+          for STACK in addons platform data network; do
+            echo "========================================="
+            echo "==> Destroying infra/$STACK..."
+            echo "========================================="
+            cd $GITHUB_WORKSPACE/infra/$STACK
+            terraform init
+            terraform destroy -auto-approve -var="environment=${{ env.ENVIRONMENT }}" -var="aws_region=${{ env.AWS_REGION }}" || true
+          done

@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EKS Beverage Store | Cloud-Native Microservices</title>
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+  <!-- Navigation Bar -->
+  <header class="navbar">
+    <div class="nav-container">
+      <a href="#" class="brand-wrapper">
+        <img src="assets/favicon.svg" alt="EKS Store Logo" class="brand-logo">
+        <div class="brand-info">
+          <h1>EKS Beverage Store</h1>
+          <p>AP Govt. Price Schedule Microservices</p>
+        </div>
+      </a>
+
+      <div class="nav-actions">
+        <!-- Live Backend Microservice Health Indicator -->
+        <div class="health-pill" title="Real-time health of Catalog & Order microservices">
+          <span id="health-status-dot" class="status-dot"></span>
+          <span id="health-status-text">Checking Services...</span>
+        </div>
+
+        <!-- Order Lookup Modal Trigger -->
+        <button id="btn-open-order-lookup" class="btn-nav-order" title="Lookup order by UUID">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <span>Track Order</span>
+        </button>
+
+        <!-- Cart Drawer Trigger -->
+        <button id="btn-open-cart" class="btn-cart-trigger" title="Open Cart">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <path d="M16 10a4 4 0 0 1-8 0"></path>
+          </svg>
+          <span>Cart</span>
+          <span id="cart-badge" class="cart-count-badge">0</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Banner -->
+  <section class="hero-banner">
+    <div class="hero-content">
+      <span class="hero-tag">AWS EKS Cloud-Native Architecture</span>
+      <h2>Scheduled Beverage Catalog & Order Microservices</h2>
+      <p>
+        Explore Andhra Pradesh Govt. regulated beverage items, filtered by category and bottle size. 
+        Orders are idempotently processed with server-side price snapshots via FastAPI, SQLAlchemy, and PostgreSQL.
+      </p>
+    </div>
+  </section>
+
+  <!-- Main Catalog Content Container -->
+  <main class="main-container">
+    <!-- Filter Toolbar -->
+    <section class="toolbar">
+      <div class="toolbar-row">
+        <!-- Search Input -->
+        <div class="search-box">
+          <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input 
+            type="text" 
+            id="search-input" 
+            placeholder="Search by beverage name or code (e.g. Royal Ranthambore, 0277, Bacardi)..." 
+            autocomplete="off" 
+          />
+        </div>
+
+        <!-- Filter Controls -->
+        <div class="filter-controls">
+          <div class="select-wrapper">
+            <label for="size-filter">Size:</label>
+            <select id="size-filter">
+              <option value="">All Sizes</option>
+            </select>
+          </div>
+
+          <div class="select-wrapper">
+            <label for="sort-filter">Sort:</label>
+            <select id="sort-filter">
+              <option value="name:asc">Name (A–Z)</option>
+              <option value="name:desc">Name (Z–A)</option>
+              <option value="price:asc">Price (Low to High)</option>
+              <option value="price:desc">Price (High to Low)</option>
+            </select>
+          </div>
+
+          <div class="select-wrapper">
+            <label for="limit-filter">Show:</label>
+            <select id="limit-filter">
+              <option value="12">12</option>
+              <option value="24" selected>24</option>
+              <option value="48">48</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Beverage Origin Tabs (Domestic IML vs Foreign BIO) -->
+      <div class="origin-tabs-container">
+        <div class="origin-tabs" id="origin-tabs" role="tablist" aria-label="Beverage Origin">
+          <button class="origin-tab active" data-origin="" role="tab" aria-selected="true">
+            <span>All Origins</span>
+          </button>
+          <button class="origin-tab" data-origin="domestic" role="tab" aria-selected="false">
+            <span>Domestic (IML)</span>
+          </button>
+          <button class="origin-tab" data-origin="foreign" role="tab" aria-selected="false">
+            <span>Foreign (BIO / Imported)</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Category Filter Pills -->
+      <div id="category-pills" class="category-pills">
+        <!-- Injected via JavaScript -->
+      </div>
+    </section>
+
+    <!-- Results Meta & Count -->
+    <div class="results-meta">
+      <div id="results-summary">Loading beverage schedule...</div>
+    </div>
+
+    <!-- Product Grid -->
+    <section id="product-grid" class="product-grid">
+      <!-- Injected via JavaScript -->
+    </section>
+
+    <!-- Pagination Controls -->
+    <div id="pagination-container" class="pagination-container">
+      <button id="btn-prev-page" class="pagination-btn" disabled>&larr; Previous</button>
+      <span id="page-indicator" class="page-indicator">Page 1 of 1</span>
+      <button id="btn-next-page" class="pagination-btn" disabled>Next &rarr;</button>
+    </div>
+  </main>
+
+  <!-- Slide-Out Cart Drawer -->
+  <div id="cart-drawer-overlay" class="cart-drawer-overlay">
+    <div class="cart-drawer">
+      <div class="drawer-header">
+        <h3>Shopping Cart</h3>
+        <button id="btn-close-drawer" class="btn-close-drawer" title="Close cart">&times;</button>
+      </div>
+
+      <div id="cart-items-list" class="drawer-body">
+        <!-- Injected via JavaScript -->
+      </div>
+
+      <div class="drawer-footer">
+        <div class="checkout-customer-ref">
+          <label for="customer-ref-input">Customer Reference / Order Desk</label>
+          <input 
+            type="text" 
+            id="customer-ref-input" 
+            value="andhra_store_demo" 
+            placeholder="e.g. counter_01 or customer_name" 
+          />
+        </div>
+
+        <div class="checkout-summary-row">
+          <span>Subtotal</span>
+          <span id="cart-subtotal-val">₹0.00</span>
+        </div>
+
+        <div class="checkout-summary-row total">
+          <span>Total (MRP)</span>
+          <span id="cart-grand-total-val" class="price-value">₹0.00</span>
+        </div>
+
+        <button id="btn-checkout" class="btn-checkout" disabled>
+          Place Order (Idempotent)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Order Confirmation Modal -->
+  <div id="order-confirmation-modal" class="modal-overlay">
+    <div class="modal-card">
+      <button id="btn-close-receipt" class="btn-close-modal" title="Close">&times;</button>
+      <div class="modal-header-icon">&#10003;</div>
+      <h3 class="modal-title">Order Placed Successfully!</h3>
+      <p class="modal-subtitle">Persisted with immutable server-side price snapshots</p>
+
+      <div id="order-receipt-content">
+        <!-- Injected via JavaScript -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Order Lookup Modal -->
+  <div id="order-lookup-modal" class="modal-overlay">
+    <div class="modal-card">
+      <button id="btn-close-lookup" class="btn-close-modal" title="Close">&times;</button>
+      <h3 class="modal-title">Track & Verify Order</h3>
+      <p class="modal-subtitle">Verify immutable order snapshots from order-service</p>
+
+      <div style="display: flex; gap: 0.5rem; margin-bottom: 1.5rem;">
+        <input 
+          type="text" 
+          id="order-lookup-input" 
+          placeholder="Paste Order UUID (e.g. 550e8400-e29b-...)" 
+          style="flex: 1; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 0.65rem 0.85rem; color: var(--text-primary); font-family: monospace; font-size: 0.85rem;" 
+        />
+        <button id="btn-submit-lookup" class="btn-checkout" style="width: auto; padding: 0 1.25rem;">
+          Verify
+        </button>
+      </div>
+
+      <div id="lookup-result-box"></div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Embedded Schedule Data -->
+  <script src="js/catalog_data.js"></script>
+  <!-- Application Controller Bundle (Universal file:// and http:// compatibility) -->
+  <script src="js/app.bundle.js"></script>
+</body>
+</html>

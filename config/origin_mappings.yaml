@@ -1,0 +1,143 @@
+# Beverage Origin & Provenance Manifest
+# Evidence-based classification of AP price schedule brands into Domestic and Foreign groups.
+# Domestic: Produced/manufactured in India (Indian Made Liquor - IML / Indian Beers / Indian Wines).
+# Foreign: Bottled in origin (BIO) or imported finished products.
+
+metadata:
+  version: "1.0.0"
+  effective_date: "2024-10-15"
+  total_categories: 7
+  domestic_definition: "Manufactured or distilled in India"
+  foreign_definition: "Imported finished beverage / Bottled In Origin (BIO)"
+
+foreign_brands:
+  '0235':
+    name: "Teacher's 50 Blended Scotch Whisky"
+    origin_group: foreign
+    country_of_origin: Scotland
+    evidence: "Scotch Whisky Association GI registration; imported blended scotch"
+  '0239':
+    name: "Teacher's Highland Cream Blended Scotch Whisky"
+    origin_group: foreign
+    country_of_origin: Scotland
+    evidence: "Distilled and blended in Glasgow, Scotland"
+  '1092':
+    name: "Dewar's Blended Scotch Whisky White Label"
+    origin_group: foreign
+    country_of_origin: Scotland
+    evidence: "Bacardi-owned Aberfeldy distillery, Scotland"
+  '1101':
+    name: "Bacardi Carta Blanca Ultra Platinum Superior White Rum"
+    origin_group: foreign
+    country_of_origin: Puerto Rico
+    evidence: "Distilled in Cataño, Puerto Rico"
+  '1102':
+    name: "Bacardi Limon Ultra Platinum Original Citrus Rum"
+    origin_group: foreign
+    country_of_origin: Puerto Rico
+    evidence: "Imported flavored rum spirit, Puerto Rico"
+  '1119':
+    name: "JOHNNIE WALKER RED LABEL BLENDED SCOTCH WHISKY"
+    origin_group: foreign
+    country_of_origin: Scotland
+    evidence: "Diageo Kilmarnock/Edinburgh, Scotland BIO import"
+  '1122':
+    name: "ABSOLUT VODKA"
+    origin_group: foreign
+    country_of_origin: Sweden
+    evidence: "Produced at Åhus, Sweden by The Absolut Company / Pernod Ricard"
+  '1126':
+    name: "BALLANTINE'S FINEST BLENDED SCOTCH WHISKY"
+    origin_group: foreign
+    country_of_origin: Scotland
+    evidence: "Dumbarton, Scotland blended scotch whisky"
+  '1127':
+    name: "JAMESON IRISH WHISKY"
+    origin_group: foreign
+    country_of_origin: Ireland
+    evidence: "Midleton Distillery, County Cork, Ireland"
+  '1128':
+    name: "BEEFEATER LONDON DRY GIN"
+    origin_group: foreign
+    country_of_origin: United Kingdom
+    evidence: "Kennington, London, UK dry gin distillery"
+  '1140':
+    name: "SEAGRAM'S 100 PIPERS EXQUISITE BLENDED SCOTCH WHISKY"
+    origin_group: foreign
+    country_of_origin: Scotland
+    evidence: "Blended and bottled in Keith, Scotland"
+  '1183':
+    name: "BLACK DOG TRIPLE GOLD RESERVE BLENDED SCOTCH WHISKY"
+    origin_group: foreign
+    country_of_origin: Scotland
+    evidence: "Imported Scotch whisky blend crafted in Scotland"
+  '1184':
+    name: "VAT 69 BLENDED SCOTCH WHISKY"
+    origin_group: foreign
+    country_of_origin: Scotland
+    evidence: "South Queensferry, Scotland heritage scotch"
+  '1190':
+    name: "TALISKER SINGLE MALT SCOTCH WHISKY AGED 10 YEARS"
+    origin_group: foreign
+    country_of_origin: Scotland
+    evidence: "Carbost, Isle of Skye, Scotland single malt distillery"
+  '1196':
+    name: "J & B RARE BLENDED SCOTCH WHISKY"
+    origin_group: foreign
+    country_of_origin: Scotland
+    evidence: "Justerini & Brooks, St James's London / Scotland blend"
+  '5109':
+    name: "AMSTEL SUPER PREMIER STRONG BEER"
+    origin_group: foreign
+    country_of_origin: Netherlands
+    evidence: "Heineken / Amstel heritage Dutch lager"
+  '5120':
+    name: "CARLSBERG PREMIUM ELEPHANT STRONG PILSNER BEER"
+    origin_group: foreign
+    country_of_origin: Denmark
+    evidence: "Carlsberg Group Copenhagen, Denmark formula"
+  '5121':
+    name: "CARLSBERG PREMIUM SMOOTH MILD DANISH BEER"
+    origin_group: foreign
+    country_of_origin: Denmark
+    evidence: "Carlsberg Group, Denmark"
+  '6563':
+    name: "FOSTER'S COPPER GOLD STRONG BEER"
+    origin_group: foreign
+    country_of_origin: Australia
+    evidence: "Heritage Australian lager recipe"
+  '7128':
+    name: "William Lawson's Blended Scotch Whisky"
+    origin_group: foreign
+    country_of_origin: Scotland
+    evidence: "Macduff Distillery, Banffshire, Scotland"
+
+domestic_sample_evidence:
+  '1042':
+    name: "Royal Ranthambore Heritage Collection Whisky"
+    country_of_origin: India
+    evidence: "Radico Khaitan Rampur Distillery, Uttar Pradesh, India"
+  '0277':
+    name: "Sterling Reserve B10 Original Blended Whisky"
+    country_of_origin: India
+    evidence: "Allied Blenders and Distillers, India"
+  '1138':
+    name: "Seagram's Royal Stag Classic Whisky"
+    country_of_origin: India
+    evidence: "Pernod Ricard India, Indian grain spirit blend"
+  '1139':
+    name: "Seagram's Blenders Pride Premium Whisky"
+    country_of_origin: India
+    evidence: "Pernod Ricard India, blended grain spirits"
+  '1038':
+    name: "Old Monk Extra Special XXX Rare Rum"
+    country_of_origin: India
+    evidence: "Mohan Meakin Brewery & Distillery, Ghaziabad, India"
+  '5118':
+    name: "Kingfisher Ultra Super Premium Lager Beer"
+    country_of_origin: India
+    evidence: "United Breweries Limited, Bengaluru, India"
+  '0901':
+    name: "Fratelli Shiraz"
+    country_of_origin: India
+    evidence: "Fratelli Vineyards, Akluj, Maharashtra, India"
