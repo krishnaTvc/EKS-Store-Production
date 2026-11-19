@@ -91,14 +91,15 @@ jobs:
             terraform destroy -auto-approve -var="environment=${{ env.ENVIRONMENT }}" -var="aws_region=${{ env.AWS_REGION }}"
           fi
 
-      # Execute ALL Stacks in Order: Network -> Data -> Platform -> Addons
+      # Execute ALL Stacks in Order: Bootstrap -> Network -> Data -> Platform -> Addons
       - name: Run Terraform on All Stacks (Apply / Plan)
         if: ${{ inputs.stack == 'all' && inputs.action != 'destroy' }}
         run: |
-          for STACK in network data platform addons; do
-            echo "========================================="
+          set -e
+          for STACK in bootstrap network data platform addons; do
+            echo "======================================================="
             echo "==> Running Terraform in infra/$STACK..."
-            echo "========================================="
+            echo "======================================================="
             cd $GITHUB_WORKSPACE/infra/$STACK
             terraform init
             if [ "${{ inputs.action }}" == "plan" ]; then
@@ -106,6 +107,7 @@ jobs:
             else
               terraform apply -auto-approve -var="environment=${{ env.ENVIRONMENT }}" -var="aws_region=${{ env.AWS_REGION }}"
             fi
+            echo "==> infra/$STACK completed successfully."
           done
 
       # Destroy ALL Stacks in Reverse Order: Addons -> Platform -> Data -> Network
