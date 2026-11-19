@@ -19,5 +19,5 @@ variable "environment" {
 variable "github_repo" {
   description = "GitHub repository owner/name for OIDC trust (e.g., username/EKS-Store-Production)"
   type        = string
-  default     = "krishna/EKS-Store-Production"
+  default     = "krishnaTvc/EKS-Store-Production"
 }
