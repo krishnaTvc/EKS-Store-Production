@@ -40,9 +40,10 @@ data "aws_security_group" "rds" {
 
 # Resolve latest supported stable PostgreSQL 16.x release in region
 data "aws_rds_engine_version" "postgres" {
-  count              = var.postgres_version == "" ? 1 : 0
-  engine             = "postgres"
-  preferred_versions = ["16.6", "16.5", "16.4", "16.2", "16.1"]
+  count   = var.postgres_version == "" ? 1 : 0
+  engine  = "postgres"
+  version = "16"
+  latest  = true
 }
 
 locals {
