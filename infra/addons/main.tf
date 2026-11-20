@@ -129,7 +129,7 @@ resource "helm_release" "aws_load_balancer_controller" {
   repository = "https://aws.github.io/eks-charts"
   chart      = "aws-load-balancer-controller"
   namespace  = "kube-system"
-  version    = "1.8.1"
+  version    = "1.8.2"
 
   set {
     name  = "clusterName"
@@ -172,7 +172,7 @@ resource "helm_release" "metrics_server" {
   repository = "https://kubernetes-sigs.github.io/metrics-server/"
   chart      = "metrics-server"
   namespace  = "kube-system"
-  version    = "3.12.1"
+  version    = "3.12.2"
 
   set {
     name  = "args[0]"
@@ -186,7 +186,7 @@ resource "helm_release" "secrets_store_csi_driver" {
   repository = "https://kubernetes-sigs.github.io/secrets-store-csi-driver/charts"
   chart      = "secrets-store-csi-driver"
   namespace  = "kube-system"
-  version    = "1.4.3"
+  version    = "1.4.6"
 
   set {
     name  = "syncSecret.enabled"

@@ -45,3 +45,9 @@ variable "rds_security_group_id" {
   type        = string
   default     = ""
 }
+
+variable "postgres_version" {
+  description = "PostgreSQL engine version for RDS (auto-selects stable 16.x if empty)"
+  type        = string
+  default     = ""
+}

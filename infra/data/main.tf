@@ -37,9 +37,98 @@ data "aws_security_group" "rds" {
   name  = "${var.project_name}-rds-sg-${var.environment}"
 }
 
+# Resolve latest supported stable PostgreSQL 16.x release in region
+data "aws_rds_engine_version" "postgres" {
+  count              = var.postgres_version == "" ? 1 : 0
+  engine             = "postgres"
+  preferred_versions = ["16.6", "16.5", "16.4", "16.2", "16.1"]
+}
+
 locals {
   resolved_rds_subnet_group_name = var.rds_subnet_group_name != "" ? var.rds_subnet_group_name : data.aws_db_subnet_group.rds[0].name
   resolved_rds_security_group_id = var.rds_security_group_id != "" ? var.rds_security_group_id : data.aws_security_group.rds[0].id
+  resolved_postgres_version      = var.postgres_version != "" ? var.postgres_version : data.aws_rds_engine_version.postgres[0].version
+}
+
+# Import blocks to adopt pre-existing data resources seamlessly
+import {
+  to = aws_s3_bucket.assets
+  id = "${var.project_name}-assets-${var.environment}-${data.aws_caller_identity.current.account_id}"
+}
+
+import {
+  to = aws_s3_bucket_versioning.assets
+  id = "${var.project_name}-assets-${var.environment}-${data.aws_caller_identity.current.account_id}"
+}
+
+import {
+  to = aws_s3_bucket_public_access_block.assets
+  id = "${var.project_name}-assets-${var.environment}-${data.aws_caller_identity.current.account_id}"
+}
+
+import {
+  to = aws_s3_bucket_server_side_encryption_configuration.assets
+  id = "${var.project_name}-assets-${var.environment}-${data.aws_caller_identity.current.account_id}"
+}
+
+import {
+  to = aws_s3_bucket_policy.assets_tls_only
+  id = "${var.project_name}-assets-${var.environment}-${data.aws_caller_identity.current.account_id}"
+}
+
+import {
+  to = aws_s3_bucket.artifacts
+  id = "${var.project_name}-artifacts-${var.environment}-${data.aws_caller_identity.current.account_id}"
+}
+
+import {
+  to = aws_s3_bucket_versioning.artifacts
+  id = "${var.project_name}-artifacts-${var.environment}-${data.aws_caller_identity.current.account_id}"
+}
+
+import {
+  to = aws_s3_bucket_public_access_block.artifacts
+  id = "${var.project_name}-artifacts-${var.environment}-${data.aws_caller_identity.current.account_id}"
+}
+
+import {
+  to = aws_s3_bucket_server_side_encryption_configuration.artifacts
+  id = "${var.project_name}-artifacts-${var.environment}-${data.aws_caller_identity.current.account_id}"
+}
+
+import {
+  to = aws_ecr_repository.services["frontend"]
+  id = "${var.project_name}-frontend"
+}
+
+import {
+  to = aws_ecr_repository.services["catalog"]
+  id = "${var.project_name}-catalog"
+}
+
+import {
+  to = aws_ecr_repository.services["orders"]
+  id = "${var.project_name}-orders"
+}
+
+import {
+  to = aws_ecr_repository.services["seed"]
+  id = "${var.project_name}-seed"
+}
+
+import {
+  to = aws_secretsmanager_secret.rds_master
+  id = "${var.project_name}/${var.environment}/rds/master"
+}
+
+import {
+  to = aws_secretsmanager_secret.catalog_db
+  id = "${var.project_name}/${var.environment}/rds/catalog"
+}
+
+import {
+  to = aws_secretsmanager_secret.order_db
+  id = "${var.project_name}/${var.environment}/rds/order"
 }
 
 # 1. Random passwords for RDS master and application users
@@ -65,7 +154,7 @@ resource "random_password" "order_db_password" {
 resource "aws_db_instance" "postgres" {
   identifier     = "${var.project_name}-rds-${var.environment}"
   engine         = "postgres"
-  engine_version = "16.3"
+  engine_version = local.resolved_postgres_version
   instance_class = var.db_instance_class
 
   allocated_storage     = var.allocated_storage

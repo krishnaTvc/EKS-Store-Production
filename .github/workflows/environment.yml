@@ -60,7 +60,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.8.5"
+          terraform_version: "1.9.8"
 
       # Action: Pause (Saves costs: scales nodes to 0, removes ALB)
       - name: Execute Pause
