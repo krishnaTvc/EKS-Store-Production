@@ -55,7 +55,7 @@ To allow GitHub Actions to build, provision, and deploy automatically:
    - Amazon RDS PostgreSQL 16
    - Amazon S3 Assets & Artifacts buckets
    - Amazon ECR repositories (`frontend`, `catalog`, `orders`, `seed`)
-   - Amazon EKS Cluster v1.30 & Worker Nodes
+   - Amazon EKS Cluster v1.32 & Worker Nodes
    - AWS Load Balancer Controller & Secrets Store CSI
 
 ---

@@ -23,9 +23,9 @@ variable "cluster_name" {
 }
 
 variable "kubernetes_version" {
-  description = "Kubernetes Version"
+  description = "Kubernetes Version for EKS cluster (supported releases: '1.32', '1.34'; set to empty string \"\" to auto-select AWS EKS default supported release)"
   type        = string
-  default     = "1.30"
+  default     = "1.32"
 }
 
 variable "node_instance_types" {

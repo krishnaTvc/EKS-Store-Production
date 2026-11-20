@@ -42,3 +42,8 @@ output "db_job_role_arn" {
   description = "IAM role ARN for database bootstrap and migration jobs"
   value       = aws_iam_role.db_job.arn
 }
+
+output "kubernetes_version" {
+  description = "The active Kubernetes version of the EKS cluster"
+  value       = aws_eks_cluster.main.version
+}

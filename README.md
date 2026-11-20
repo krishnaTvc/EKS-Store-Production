@@ -1,7 +1,7 @@
 # EKS Beverage Store: Production-Grade AWS Microservices Platform
 
 [![CI/CD Pipeline](https://img.shields.io/badge/CI%2FCD-GitHub_Actions_OIDC-blue?logo=github-actions)](.github/workflows/release.yml)
-[![Kubernetes](https://img.shields.io/badge/Kubernetes-EKS_v1.30-326CE5?logo=kubernetes)](helm/eks-store)
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-EKS_v1.32-326CE5?logo=kubernetes)](helm/eks-store)
 [![Terraform](https://img.shields.io/badge/IaC-Terraform_v1.8+-844FBA?logo=terraform)](infra)
 [![FastAPI](https://img.shields.io/badge/Backend-FastAPI_0.115-009688?logo=fastapi)](catalog-service)
 [![PostgreSQL](https://img.shields.io/badge/Database-RDS_PostgreSQL_16-4169E1?logo=postgresql)](docker/postgres)
@@ -32,7 +32,7 @@ flowchart TD
         end
 
         subgraph PrivateAppSubnets ["Private Application Subnets (EKS Managed Nodes)"]
-            subgraph EKS_Cluster ["Amazon EKS Cluster (Kubernetes v1.30)"]
+            subgraph EKS_Cluster ["Amazon EKS Cluster (Kubernetes v1.32)"]
                 FrontendPod["Frontend Nginx (Port 8080)<br/>Non-Root, Read-Only FS"]
                 CatalogPod["Catalog API (FastAPI :8001)<br/>IRSA S3 Read & Secrets CSI"]
                 OrderPod["Order API (FastAPI :8002)<br/>Idempotent Snapshot Engine"]
@@ -136,7 +136,7 @@ EKS-Store-Production/
 │   ├── bootstrap/                     # S3 state bucket, DynamoDB lock table, GitHub OIDC provider
 │   ├── network/                       # VPC, Public/Private/Isolated subnets, IGW, NAT, S3 endpoint
 │   ├── data/                          # RDS PostgreSQL, Secrets Manager, S3 asset buckets, ECR
-│   ├── platform/                      # EKS cluster v1.30, Managed Node Group, IRSA IAM roles
+│   ├── platform/                      # EKS cluster v1.32, Managed Node Group, IRSA IAM roles
 │   └── addons/                        # AWS Load Balancer Controller, Secrets Store CSI, Metrics Server
 ├── helm/
 │   └── eks-store/                     # Production Kubernetes Helm Chart
@@ -237,7 +237,7 @@ cd ../addons
 terraform init
 terraform apply -auto-approve
 ```
-*Provisions EKS v1.30, Managed Node Group in private subnets, AWS Load Balancer Controller, and Secrets Store CSI Driver.*
+*Provisions EKS v1.32, Managed Node Group in private subnets, AWS Load Balancer Controller, and Secrets Store CSI Driver.*
 
 ### Step 4: Deploy Application with Helm
 ```bash

@@ -28,7 +28,7 @@ flowchart TD
         end
 
         subgraph PrivateAppSubnets ["Private Application Subnets (EKS Managed Nodes)"]
-            subgraph EKS_Cluster ["Amazon EKS Cluster (v1.30)"]
+            subgraph EKS_Cluster ["Amazon EKS Cluster (v1.32)"]
                 FrontendPod["Frontend Pod (Nginx 8080)<br/>Non-Root, Read-Only FS"]
                 CatalogPod["Catalog API (FastAPI:8001)<br/>IRSA S3 Read & DB CSI"]
                 OrderPod["Order API (FastAPI:8002)<br/>Idempotent Order Engine"]
