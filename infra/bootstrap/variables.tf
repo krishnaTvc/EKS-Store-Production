@@ -21,3 +21,9 @@ variable "github_repo" {
   type        = string
   default     = "krishnaTvc/EKS-Store-Production"
 }
+
+variable "create_oidc_provider" {
+  description = "Whether to create the GitHub OIDC provider. Defaults to false because token.actions.githubusercontent.com already exists in AWS account."
+  type        = bool
+  default     = false
+}

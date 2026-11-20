@@ -101,15 +101,21 @@ resource "aws_dynamodb_table" "tf_locks" {
   }
 }
 
-# 3. GitHub Actions OIDC Identity Provider
+# 3. GitHub Actions OIDC Identity Provider (reuses existing provider if already in account)
 data "tls_certificate" "github" {
-  url = "https://token.actions.githubusercontent.com/.well-known/openid-configuration"
+  count = var.create_oidc_provider ? 1 : 0
+  url   = "https://token.actions.githubusercontent.com/.well-known/openid-configuration"
 }
 
 resource "aws_iam_openid_connect_provider" "github" {
+  count           = var.create_oidc_provider ? 1 : 0
   url             = "https://token.actions.githubusercontent.com"
   client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = [data.tls_certificate.github.certificates[0].sha1_fingerprint]
+  thumbprint_list = [data.tls_certificate.github[0].certificates[0].sha1_fingerprint]
+}
+
+locals {
+  github_oidc_provider_arn = var.create_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com"
 }
 
 # 4. Scoped IAM Role for GitHub Actions CI/CD Pipeline
@@ -122,7 +128,7 @@ resource "aws_iam_role" "github_actions" {
       {
         Effect = "Allow"
         Principal = {
-          Federated = aws_iam_openid_connect_provider.github.arn
+          Federated = local.github_oidc_provider_arn
         }
         Action = "sts:AssumeRoleWithWebIdentity"
         Condition = {
