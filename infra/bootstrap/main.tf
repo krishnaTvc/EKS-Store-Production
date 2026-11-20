@@ -58,6 +58,16 @@ import {
   id = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/${var.project_name}-github-ci-policy-${var.environment}"
 }
 
+import {
+  to = aws_iam_role.github_actions
+  id = "${var.project_name}-github-actions-role-${var.environment}"
+}
+
+import {
+  to = aws_iam_role_policy_attachment.github_actions
+  id = "${var.project_name}-github-actions-role-${var.environment}/arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/${var.project_name}-github-ci-policy-${var.environment}"
+}
+
 # 1. Dedicated S3 Bucket for Terraform Remote State
 resource "aws_s3_bucket" "tf_state" {
   bucket        = "${var.project_name}-tf-state-${var.environment}-${data.aws_caller_identity.current.account_id}"
