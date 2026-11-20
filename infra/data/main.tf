@@ -10,6 +10,7 @@ terraform {
       version = "~> 3.6"
     }
   }
+  backend "s3" {}
 }
 
 provider "aws" {
@@ -117,18 +118,38 @@ import {
 }
 
 import {
+  to = aws_ecr_lifecycle_policy.services["frontend"]
+  id = "${var.project_name}-frontend"
+}
+
+import {
+  to = aws_ecr_lifecycle_policy.services["catalog"]
+  id = "${var.project_name}-catalog"
+}
+
+import {
+  to = aws_ecr_lifecycle_policy.services["orders"]
+  id = "${var.project_name}-orders"
+}
+
+import {
+  to = aws_ecr_lifecycle_policy.services["seed"]
+  id = "${var.project_name}-seed"
+}
+
+import {
   to = aws_secretsmanager_secret.rds_master
   id = "${var.project_name}/${var.environment}/rds/master"
 }
 
 import {
   to = aws_secretsmanager_secret.catalog_db
-  id = "${var.project_name}/${var.environment}/rds/catalog"
+  id = "${var.project_name}/${var.environment}/catalog-db"
 }
 
 import {
   to = aws_secretsmanager_secret.order_db
-  id = "${var.project_name}/${var.environment}/rds/order"
+  id = "${var.project_name}/${var.environment}/order-db"
 }
 
 # 1. Random passwords for RDS master and application users

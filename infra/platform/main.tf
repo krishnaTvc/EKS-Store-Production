@@ -10,6 +10,7 @@ terraform {
       version = "~> 4.0"
     }
   }
+  backend "s3" {}
 }
 
 provider "aws" {
@@ -61,12 +62,12 @@ data "aws_s3_bucket" "assets" {
 
 data "aws_secretsmanager_secret" "catalog_db" {
   count = var.catalog_db_secret_arn == "" ? 1 : 0
-  name  = "${var.project_name}/${var.environment}/rds/catalog"
+  name  = "${var.project_name}/${var.environment}/catalog-db"
 }
 
 data "aws_secretsmanager_secret" "order_db" {
   count = var.order_db_secret_arn == "" ? 1 : 0
-  name  = "${var.project_name}/${var.environment}/rds/order"
+  name  = "${var.project_name}/${var.environment}/order-db"
 }
 
 data "aws_secretsmanager_secret" "rds_master" {

@@ -75,14 +75,43 @@ jobs:
         with:
           terraform_version: "1.9.8"
 
+      - name: Resolve Infrastructure Metadata
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          STATE_BUCKET="${{ env.PROJECT_NAME }}-tf-state-${{ env.ENVIRONMENT }}-${ACCOUNT_ID}"
+          LOCK_TABLE="${{ env.PROJECT_NAME }}-tf-locks-${{ env.ENVIRONMENT }}"
+          echo "ACCOUNT_ID=${ACCOUNT_ID}" >> $GITHUB_ENV
+          echo "STATE_BUCKET=${STATE_BUCKET}" >> $GITHUB_ENV
+          echo "LOCK_TABLE=${LOCK_TABLE}" >> $GITHUB_ENV
+          echo "Resolved AWS Account: ${ACCOUNT_ID}"
+          echo "Remote S3 State Bucket: ${STATE_BUCKET}"
+          echo "DynamoDB Lock Table: ${LOCK_TABLE}"
+
+      - name: Pre-flight Healing for Untracked Remnants
+        if: ${{ inputs.action != 'destroy' && (inputs.stack == 'all' || inputs.stack == 'network') }}
+        run: |
+          pip install boto3 --quiet
+          python .github/scripts/clean-orphaned-network.py
+
       # Execute Individual Stack
       - name: Run Terraform on Single Stack
         if: ${{ inputs.stack != 'all' }}
         run: |
-          STACK="infra/${{ inputs.stack }}"
-          echo "Processing stack: $STACK with action: ${{ inputs.action }}"
-          cd $STACK
-          terraform init
+          STACK_NAME="${{ inputs.stack }}"
+          STACK_DIR="infra/${STACK_NAME}"
+          echo "Processing stack: $STACK_DIR with action: ${{ inputs.action }}"
+          cd "$GITHUB_WORKSPACE/$STACK_DIR"
+
+          if [ "$STACK_NAME" = "bootstrap" ]; then
+            terraform init
+          else
+            terraform init \
+              -backend-config="bucket=${STATE_BUCKET}" \
+              -backend-config="key=stacks/${STACK_NAME}/terraform.tfstate" \
+              -backend-config="region=${{ env.AWS_REGION }}" \
+              -backend-config="dynamodb_table=${LOCK_TABLE}"
+          fi
+
           if [ "${{ inputs.action }}" == "plan" ]; then
             terraform plan -var="environment=${{ env.ENVIRONMENT }}" -var="aws_region=${{ env.AWS_REGION }}"
           elif [ "${{ inputs.action }}" == "apply" ]; then
@@ -96,29 +125,43 @@ jobs:
         if: ${{ inputs.stack == 'all' && inputs.action != 'destroy' }}
         run: |
           set -e
-          for STACK in bootstrap network data platform addons; do
+          for STACK_NAME in bootstrap network data platform addons; do
             echo "======================================================="
-            echo "==> Running Terraform in infra/$STACK..."
+            echo "==> Running Terraform in infra/$STACK_NAME..."
             echo "======================================================="
-            cd $GITHUB_WORKSPACE/infra/$STACK
-            terraform init
+            cd "$GITHUB_WORKSPACE/infra/$STACK_NAME"
+
+            if [ "$STACK_NAME" = "bootstrap" ]; then
+              terraform init
+            else
+              terraform init \
+                -backend-config="bucket=${STATE_BUCKET}" \
+                -backend-config="key=stacks/${STACK_NAME}/terraform.tfstate" \
+                -backend-config="region=${{ env.AWS_REGION }}" \
+                -backend-config="dynamodb_table=${LOCK_TABLE}"
+            fi
+
             if [ "${{ inputs.action }}" == "plan" ]; then
               terraform plan -var="environment=${{ env.ENVIRONMENT }}" -var="aws_region=${{ env.AWS_REGION }}"
             else
               terraform apply -auto-approve -var="environment=${{ env.ENVIRONMENT }}" -var="aws_region=${{ env.AWS_REGION }}"
             fi
-            echo "==> infra/$STACK completed successfully."
+            echo "==> infra/$STACK_NAME completed successfully."
           done
 
       # Destroy ALL Stacks in Reverse Order: Addons -> Platform -> Data -> Network
       - name: Destroy All Stacks
         if: ${{ inputs.stack == 'all' && inputs.action == 'destroy' }}
         run: |
-          for STACK in addons platform data network; do
+          for STACK_NAME in addons platform data network; do
             echo "========================================="
-            echo "==> Destroying infra/$STACK..."
+            echo "==> Destroying infra/$STACK_NAME..."
             echo "========================================="
-            cd $GITHUB_WORKSPACE/infra/$STACK
-            terraform init
+            cd "$GITHUB_WORKSPACE/infra/$STACK_NAME"
+            terraform init \
+              -backend-config="bucket=${STATE_BUCKET}" \
+              -backend-config="key=stacks/${STACK_NAME}/terraform.tfstate" \
+              -backend-config="region=${{ env.AWS_REGION }}" \
+              -backend-config="dynamodb_table=${LOCK_TABLE}"
             terraform destroy -auto-approve -var="environment=${{ env.ENVIRONMENT }}" -var="aws_region=${{ env.AWS_REGION }}" || true
           done
