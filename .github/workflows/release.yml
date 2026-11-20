@@ -4,6 +4,14 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'frontend/**'
+      - 'catalog-service/**'
+      - 'order-service/**'
+      - 'helm/**'
+      - 'data/**'
+      - 'config/**'
+      - 'scripts/**'
   workflow_dispatch:
     inputs:
       environment:
