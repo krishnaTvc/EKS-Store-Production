@@ -162,19 +162,7 @@ jobs:
           if [[ "$TOKEN_REQ" != *"sts.amazonaws.com"* ]]; then
             echo "Configuring tokenRequests on CSIDriver for AWS STS IRSA..."
             kubectl delete csidriver secrets-store.csi.k8s.io --ignore-not-found=true
-            cat <<'EOF' | kubectl apply -f -
-apiVersion: storage.k8s.io/v1
-kind: CSIDriver
-metadata:
-  name: secrets-store.csi.k8s.io
-spec:
-  attachRequired: false
-  podInfoOnMount: true
-  volumeLifecycleModes:
-  - Ephemeral
-  tokenRequests:
-  - audience: sts.amazonaws.com
-EOF
+            echo '{"apiVersion":"storage.k8s.io/v1","kind":"CSIDriver","metadata":{"name":"secrets-store.csi.k8s.io"},"spec":{"attachRequired":false,"podInfoOnMount":true,"volumeLifecycleModes":["Ephemeral"],"tokenRequests":[{"audience":"sts.amazonaws.com"}]}}' | kubectl apply -f -
             echo "Restarting Secrets Store CSI driver daemonset..."
             kubectl rollout restart daemonset/secrets-store-csi-driver -n kube-system || true
             kubectl rollout status daemonset/secrets-store-csi-driver -n kube-system --timeout=60s || true
