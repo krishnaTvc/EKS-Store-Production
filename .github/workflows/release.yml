@@ -220,3 +220,21 @@ jobs:
 
           echo "ALB Hostname: $ALB_HOSTNAME"
           python scripts/smoke_test.py --url "http://$ALB_HOSTNAME"
+
+      - name: Diagnostic Dumps on Failure
+        if: failure()
+        run: |
+          echo "=== Pods in eks-store ==="
+          kubectl get pods -n eks-store -o wide || true
+          echo "=== Jobs in eks-store ==="
+          kubectl get jobs -n eks-store || true
+          echo "=== Detailed Pod Status & Events ==="
+          kubectl describe pods -n eks-store || true
+          echo "=== Container Logs ==="
+          for p in $(kubectl get pods -n eks-store -o jsonpath='{.items[*].metadata.name}'); do
+            echo "--- Logs for pod $p ---"
+            kubectl logs -n eks-store "$p" --all-containers --tail=100 || true
+          done
+          echo "=== CSI Secrets Store Driver Pods in kube-system ==="
+          kubectl get pods -n kube-system -l "app in (secrets-store-csi-driver, csi-secrets-store-provider-aws)" || true
+          kubectl logs -n kube-system -l "app in (secrets-store-csi-driver, csi-secrets-store-provider-aws)" --tail=50 || true
