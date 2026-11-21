@@ -209,6 +209,10 @@ jobs:
             echo "CSIDriver tokenRequests is already properly configured with sts.amazonaws.com."
           fi
 
+          echo "Granting TokenRequest permissions to secrets-store-csi-driver..."
+          echo '{"apiVersion":"rbac.authorization.k8s.io/v1","kind":"ClusterRole","metadata":{"name":"secrets-store-csi-driver-token-request"},"rules":[{"apiGroups":[""],"resources":["serviceaccounts/token"],"verbs":["create"]}]}' | kubectl apply -f -
+          echo '{"apiVersion":"rbac.authorization.k8s.io/v1","kind":"ClusterRoleBinding","metadata":{"name":"secrets-store-csi-driver-token-request"},"roleRef":{"apiGroup":"rbac.authorization.k8s.io","kind":"ClusterRole","name":"secrets-store-csi-driver-token-request"},"subjects":[{"kind":"ServiceAccount","name":"secrets-store-csi-driver","namespace":"kube-system"}]}' | kubectl apply -f -
+
       - name: Ensure AWS Load Balancer Controller and Subnets
         run: |
           echo "Resolving Cluster VPC ID..."
@@ -237,14 +241,21 @@ jobs:
           fi
           echo "PUBLIC_SUBNETS=$PUBLIC_SUBNETS" >> $GITHUB_ENV
 
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          ALB_ROLE_NAME="${PROJECT_NAME}-alb-controller-role-${ENVIRONMENT}"
+          ALB_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${ALB_ROLE_NAME}"
+
+          echo "Ensuring full IAM permissions for AWS Load Balancer Controller role..."
+          aws iam put-role-policy \
+            --role-name "$ALB_ROLE_NAME" \
+            --policy-name "ALBControllerAddTagsFix" \
+            --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["elasticloadbalancing:AddTags","elasticloadbalancing:RemoveTags"],"Resource":"*"}]}' || true
+
           echo "Checking AWS Load Balancer Controller in kube-system..."
           if ! kubectl get deployment -n kube-system aws-load-balancer-controller >/dev/null 2>&1; then
             echo "AWS Load Balancer Controller is NOT installed in kube-system. Installing via Helm..."
             helm repo add eks https://aws.github.io/eks-charts --force-update
             helm repo update
-            
-            ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-            ALB_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${PROJECT_NAME}-alb-controller-role-${ENVIRONMENT}"
             
             helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
               --namespace kube-system \
@@ -254,6 +265,9 @@ jobs:
               --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="$ALB_ROLE_ARN" \
               --set region="$AWS_REGION" \
               --set vpcId="$VPC_ID"
+          else
+            echo "Restarting AWS Load Balancer Controller to refresh credentials and permissions..."
+            kubectl rollout restart deployment/aws-load-balancer-controller -n kube-system || true
           fi
 
           echo "Awaiting AWS Load Balancer Controller readiness..."
@@ -294,7 +308,7 @@ jobs:
             kubectl apply -f k8s/07-ingress.yaml
 
             echo "Triggering database setup jobs..."
-            kubectl delete job eks-store-bootstrap-db eks-store-catalog-migration eks-store-orders-migration eks-store-catalog-seed -n eks-store --ignore-not-found=true
+            kubectl delete jobs -n eks-store --all --ignore-not-found=true || true
             sed -i "s|407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-seed:latest|${REGISTRY}/${PROJECT_NAME}-seed:${TAG}|g" k8s/jobs/db-bootstrap.yaml k8s/jobs/catalog-seed.yaml
             sed -i "s|407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-catalog:latest|${REGISTRY}/${PROJECT_NAME}-catalog:${TAG}|g" k8s/jobs/catalog-migration.yaml
             sed -i "s|407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-orders:latest|${REGISTRY}/${PROJECT_NAME}-orders:${TAG}|g" k8s/jobs/orders-migration.yaml
