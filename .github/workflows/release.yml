@@ -13,6 +13,7 @@ on:
       - 'data/**'
       - 'config/**'
       - 'scripts/**'
+      - '.github/**'
   workflow_dispatch:
     inputs:
       environment:
@@ -430,31 +431,9 @@ jobs:
             kubectl apply -f k8s/07-ingress.yaml
 
             echo "=== Executing Database Bootstrap Job ==="
-            cat <<EOF | kubectl apply -f -
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: eks-store-bootstrap-db-${RUN_ID}
-  namespace: eks-store
-spec:
-  backoffLimit: 2
-  activeDeadlineSeconds: 180
-  template:
-    spec:
-      serviceAccountName: db-job-sa
-      restartPolicy: OnFailure
-      containers:
-        - name: bootstrap-db
-          image: ${REGISTRY}/${PROJECT_NAME}-seed:${TAG}
-          imagePullPolicy: Always
-          command: ["python", "scripts/bootstrap_databases.py"]
-          envFrom:
-            - secretRef:
-                name: eks-store-db-secret
-          env:
-            - name: PGSSLMODE
-              value: "prefer"
-EOF
+            sed -i "s|name: eks-store-bootstrap-db|name: eks-store-bootstrap-db-${RUN_ID}|g" k8s/jobs/db-bootstrap.yaml
+            sed -i "s|407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-seed:latest|${REGISTRY}/${PROJECT_NAME}-seed:${TAG}|g" k8s/jobs/db-bootstrap.yaml
+            kubectl apply -f k8s/jobs/db-bootstrap.yaml
 
             echo "Awaiting completion of bootstrap job eks-store-bootstrap-db-${RUN_ID}..."
             if ! kubectl wait --for=condition=complete job/eks-store-bootstrap-db-${RUN_ID} -n eks-store --timeout=120s; then
@@ -467,57 +446,12 @@ EOF
             kubectl logs -n eks-store job/eks-store-bootstrap-db-${RUN_ID} --all-containers --tail=50 || true
 
             echo "=== Executing Database Migration Jobs ==="
-            cat <<EOF | kubectl apply -f -
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: eks-store-catalog-migration-${RUN_ID}
-  namespace: eks-store
-spec:
-  backoffLimit: 2
-  activeDeadlineSeconds: 180
-  template:
-    spec:
-      serviceAccountName: catalog-service-sa
-      restartPolicy: OnFailure
-      containers:
-        - name: catalog-migration
-          image: ${REGISTRY}/${PROJECT_NAME}-catalog:${TAG}
-          imagePullPolicy: Always
-          command: ["alembic", "upgrade", "head"]
-          env:
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: catalog-db-sync-secret
-                  key: DATABASE_URL
-EOF
-
-            cat <<EOF | kubectl apply -f -
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: eks-store-orders-migration-${RUN_ID}
-  namespace: eks-store
-spec:
-  backoffLimit: 2
-  activeDeadlineSeconds: 180
-  template:
-    spec:
-      serviceAccountName: order-service-sa
-      restartPolicy: OnFailure
-      containers:
-        - name: orders-migration
-          image: ${REGISTRY}/${PROJECT_NAME}-orders:${TAG}
-          imagePullPolicy: Always
-          command: ["alembic", "upgrade", "head"]
-          env:
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: order-db-sync-secret
-                  key: DATABASE_URL
-EOF
+            sed -i "s|name: eks-store-catalog-migration|name: eks-store-catalog-migration-${RUN_ID}|g" k8s/jobs/catalog-migration.yaml
+            sed -i "s|407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-catalog:latest|${REGISTRY}/${PROJECT_NAME}-catalog:${TAG}|g" k8s/jobs/catalog-migration.yaml
+            sed -i "s|name: eks-store-orders-migration|name: eks-store-orders-migration-${RUN_ID}|g" k8s/jobs/orders-migration.yaml
+            sed -i "s|407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-orders:latest|${REGISTRY}/${PROJECT_NAME}-orders:${TAG}|g" k8s/jobs/orders-migration.yaml
+            kubectl apply -f k8s/jobs/catalog-migration.yaml
+            kubectl apply -f k8s/jobs/orders-migration.yaml
 
             echo "Awaiting completion of migration jobs..."
             if ! kubectl wait --for=condition=complete job/eks-store-catalog-migration-${RUN_ID} job/eks-store-orders-migration-${RUN_ID} -n eks-store --timeout=120s; then
@@ -531,31 +465,9 @@ EOF
             echo "✅ Database Migrations complete!"
 
             echo "=== Executing Catalog Seed Job ==="
-            cat <<EOF | kubectl apply -f -
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: eks-store-catalog-seed-${RUN_ID}
-  namespace: eks-store
-spec:
-  backoffLimit: 2
-  activeDeadlineSeconds: 180
-  template:
-    spec:
-      serviceAccountName: catalog-service-sa
-      restartPolicy: OnFailure
-      containers:
-        - name: catalog-seed
-          image: ${REGISTRY}/${PROJECT_NAME}-seed:${TAG}
-          imagePullPolicy: Always
-          command: ["python", "scripts/import_catalog.py"]
-          env:
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: catalog-db-sync-secret
-                  key: DATABASE_URL
-EOF
+            sed -i "s|name: eks-store-catalog-seed|name: eks-store-catalog-seed-${RUN_ID}|g" k8s/jobs/catalog-seed.yaml
+            sed -i "s|407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-seed:latest|${REGISTRY}/${PROJECT_NAME}-seed:${TAG}|g" k8s/jobs/catalog-seed.yaml
+            kubectl apply -f k8s/jobs/catalog-seed.yaml
 
             echo "Awaiting completion of catalog seed job..."
             if ! kubectl wait --for=condition=complete job/eks-store-catalog-seed-${RUN_ID} -n eks-store --timeout=120s; then
