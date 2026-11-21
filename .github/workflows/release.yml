@@ -319,96 +319,270 @@ jobs:
           kubectl create namespace eks-store --dry-run=client -o yaml | kubectl apply -f -
 
           echo "=== Fetching database credentials and creating direct Kubernetes Secrets ==="
-          MASTER_JSON=$(aws secretsmanager get-secret-value --region "$AWS_REGION" --secret-id "${PROJECT_NAME}/${ENVIRONMENT}/rds/master" --query "SecretString" --output text)
-          CATALOG_JSON=$(aws secretsmanager get-secret-value --region "$AWS_REGION" --secret-id "${PROJECT_NAME}/${ENVIRONMENT}/catalog-db" --query "SecretString" --output text)
-          ORDER_JSON=$(aws secretsmanager get-secret-value --region "$AWS_REGION" --secret-id "${PROJECT_NAME}/${ENVIRONMENT}/order-db" --query "SecretString" --output text)
+          python3 -m pip install boto3 --quiet
+          python3 - << 'PYEOF'
+          import json, os, subprocess, boto3
 
-          RDS_HOST=$(echo "$MASTER_JSON" | jq -r '.host')
-          RDS_PORT=$(echo "$MASTER_JSON" | jq -r '.port // "5432"')
-          RDS_MASTER_USER=$(echo "$MASTER_JSON" | jq -r '.master_username // "postgres"')
-          RDS_MASTER_PASSWORD=$(echo "$MASTER_JSON" | jq -r '.master_password')
+          region = os.environ.get("AWS_REGION", "eu-north-1")
+          sm = boto3.client("secretsmanager", region_name=region)
+          proj = os.environ["PROJECT_NAME"]
+          env = os.environ["ENVIRONMENT"]
 
-          CATALOG_PASSWORD=$(echo "$CATALOG_JSON" | jq -r '.password')
-          CATALOG_DB_URL=$(echo "$CATALOG_JSON" | jq -r '.DATABASE_URL' | sed 's/sslmode=verify-full/sslmode=require/g')
+          master_raw = sm.get_secret_value(SecretId=f"{proj}/{env}/rds/master")["SecretString"]
+          cat_raw = sm.get_secret_value(SecretId=f"{proj}/{env}/catalog-db")["SecretString"]
+          ord_raw = sm.get_secret_value(SecretId=f"{proj}/{env}/order-db")["SecretString"]
 
-          ORDER_PASSWORD=$(echo "$ORDER_JSON" | jq -r '.password')
-          ORDER_DB_URL=$(echo "$ORDER_JSON" | jq -r '.DATABASE_URL' | sed 's/sslmode=verify-full/sslmode=require/g')
+          master = json.loads(master_raw)
+          catalog = json.loads(cat_raw)
+          order = json.loads(ord_raw)
 
-          kubectl create secret generic eks-store-db-secret -n eks-store \
-            --from-literal=RDS_HOST="$RDS_HOST" \
-            --from-literal=RDS_PORT="$RDS_PORT" \
-            --from-literal=RDS_MASTER_USER="$RDS_MASTER_USER" \
-            --from-literal=RDS_MASTER_PASSWORD="$RDS_MASTER_PASSWORD" \
-            --from-literal=CATALOG_DB_PASSWORD="$CATALOG_PASSWORD" \
-            --from-literal=ORDER_DB_PASSWORD="$ORDER_PASSWORD" \
-            --from-literal=CATALOG_DATABASE_URL="$CATALOG_DB_URL" \
-            --from-literal=ORDER_DATABASE_URL="$ORDER_DB_URL" \
-            --dry-run=client -o yaml | kubectl apply -f -
+          host = str(master.get("host") or master.get("endpoint")).strip()
+          port = str(master.get("port", "5432")).strip()
+          master_user = str(master.get("master_username") or master.get("username", "postgres")).strip()
+          master_pass = str(master.get("master_password") or master.get("password")).strip()
 
-          kubectl create secret generic catalog-db-sync-secret -n eks-store \
-            --from-literal=DATABASE_URL="$CATALOG_DB_URL" \
-            --dry-run=client -o yaml | kubectl apply -f -
+          cat_user = str(catalog.get("username", "catalog_user")).strip()
+          cat_pass = str(catalog.get("password") or catalog.get("catalog_password")).strip()
+          cat_url = str(catalog.get("DATABASE_URL", "")).strip()
+          if not cat_url:
+              from urllib.parse import quote_plus
+              cat_url = f"postgresql+psycopg://{cat_user}:{quote_plus(cat_pass)}@{host}:{port}/catalog?sslmode=require"
+          elif "sslmode=verify-full" in cat_url:
+              cat_url = cat_url.replace("sslmode=verify-full", "sslmode=require")
 
-          kubectl create secret generic order-db-sync-secret -n eks-store \
-            --from-literal=DATABASE_URL="$ORDER_DB_URL" \
-            --dry-run=client -o yaml | kubectl apply -f -
+          ord_user = str(order.get("username", "order_user")).strip()
+          ord_pass = str(order.get("password") or order.get("order_password")).strip()
+          ord_url = str(order.get("DATABASE_URL", "")).strip()
+          if not ord_url:
+              from urllib.parse import quote_plus
+              ord_url = f"postgresql+psycopg://{ord_user}:{quote_plus(ord_pass)}@{host}:{port}/orders?sslmode=require"
+          elif "sslmode=verify-full" in ord_url:
+              ord_url = ord_url.replace("sslmode=verify-full", "sslmode=require")
+
+          # eks-store-db-secret
+          sec_manifest = {
+              "apiVersion": "v1",
+              "kind": "Secret",
+              "metadata": {
+                  "name": "eks-store-db-secret",
+                  "namespace": "eks-store"
+              },
+              "type": "Opaque",
+              "stringData": {
+                  "RDS_HOST": host,
+                  "RDS_PORT": port,
+                  "RDS_MASTER_USER": master_user,
+                  "RDS_MASTER_PASSWORD": master_pass,
+                  "CATALOG_DB_PASSWORD": cat_pass,
+                  "ORDER_DB_PASSWORD": ord_pass,
+                  "CATALOG_DATABASE_URL": cat_url,
+                  "ORDER_DATABASE_URL": ord_url,
+                  "DATABASE_URL": cat_url,
+              }
+          }
+          subprocess.run(["kubectl", "apply", "-f", "-"], input=json.dumps(sec_manifest), text=True, check=True)
+
+          # catalog-db-sync-secret
+          cat_sync = {
+              "apiVersion": "v1",
+              "kind": "Secret",
+              "metadata": {
+                  "name": "catalog-db-sync-secret",
+                  "namespace": "eks-store"
+              },
+              "type": "Opaque",
+              "stringData": {
+                  "DATABASE_URL": cat_url
+              }
+          }
+          subprocess.run(["kubectl", "apply", "-f", "-"], input=json.dumps(cat_sync), text=True, check=True)
+
+          # order-db-sync-secret
+          ord_sync = {
+              "apiVersion": "v1",
+              "kind": "Secret",
+              "metadata": {
+                  "name": "order-db-sync-secret",
+                  "namespace": "eks-store"
+              },
+              "type": "Opaque",
+              "stringData": {
+                  "DATABASE_URL": ord_url
+              }
+          }
+          subprocess.run(["kubectl", "apply", "-f", "-"], input=json.dumps(ord_sync), text=True, check=True)
+          print("Direct Kubernetes secrets successfully created via stringData!")
+          PYEOF
 
           if [ "${DEPLOYMENT_METHOD}" = "kubectl" ]; then
             echo "=== Deploying using pure Kubernetes YAML manifests ==="
+            RUN_ID=$(date +%s)
             kubectl apply -f k8s/00-namespace.yaml
             kubectl apply -f k8s/01-serviceaccounts.yaml
             kubectl apply -f k8s/02-configmap.yaml
             kubectl apply -f k8s/03-secretproviderclass.yaml
-            
-            # Update image tags dynamically in manifests
-            sed -i "s|407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-frontend:latest|${REGISTRY}/${PROJECT_NAME}-frontend:${TAG}|g" k8s/04-frontend.yaml
-            sed -i "s|407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-catalog:latest|${REGISTRY}/${PROJECT_NAME}-catalog:${TAG}|g" k8s/05-catalog.yaml k8s/jobs/catalog-migration.yaml
-            sed -i "s|407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-orders:latest|${REGISTRY}/${PROJECT_NAME}-orders:${TAG}|g" k8s/06-orders.yaml k8s/jobs/orders-migration.yaml
-            sed -i "s|407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-seed:latest|${REGISTRY}/${PROJECT_NAME}-seed:${TAG}|g" k8s/jobs/db-bootstrap.yaml k8s/jobs/catalog-seed.yaml
             
             # Inject subnets into Ingress
             if [ -n "$PUBLIC_SUBNETS" ]; then
               echo "Annotating Ingress with explicit public subnets: $PUBLIC_SUBNETS"
               sed -i "s|alb.ingress.kubernetes.io/scheme: internet-facing|alb.ingress.kubernetes.io/scheme: internet-facing\n    alb.ingress.kubernetes.io/subnets: \"${PUBLIC_SUBNETS}\"|g" k8s/07-ingress.yaml
             fi
-
             kubectl apply -f k8s/07-ingress.yaml
 
-            echo "=== Executing Database Bootstrap, Migration, and Seed Jobs ==="
-            kubectl delete jobs -n eks-store --all --ignore-not-found=true || true
-            
-            echo "Running Database Bootstrap..."
-            kubectl apply -f k8s/jobs/db-bootstrap.yaml
-            if ! kubectl wait --for=condition=complete job/eks-store-bootstrap-db -n eks-store --timeout=90s; then
-              echo "=== Bootstrap DB Pod Logs ==="
-              kubectl logs -n eks-store -l app.kubernetes.io/component=db-bootstrap --tail=100 || true
-            fi
+            echo "=== Executing Database Bootstrap Job ==="
+            cat <<EOF | kubectl apply -f -
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: eks-store-bootstrap-db-${RUN_ID}
+  namespace: eks-store
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 180
+  template:
+    spec:
+      serviceAccountName: db-job-sa
+      restartPolicy: OnFailure
+      containers:
+        - name: bootstrap-db
+          image: ${REGISTRY}/${PROJECT_NAME}-seed:${TAG}
+          imagePullPolicy: Always
+          command: ["python", "scripts/bootstrap_databases.py"]
+          envFrom:
+            - secretRef:
+                name: eks-store-db-secret
+          env:
+            - name: PGSSLMODE
+              value: "prefer"
+EOF
 
-            echo "Running Database Migrations..."
-            kubectl apply -f k8s/jobs/catalog-migration.yaml
-            kubectl apply -f k8s/jobs/orders-migration.yaml
-            if ! kubectl wait --for=condition=complete job/eks-store-catalog-migration job/eks-store-orders-migration -n eks-store --timeout=90s; then
-              echo "=== Migration Pod Logs ==="
-              kubectl logs -n eks-store -l app.kubernetes.io/component=catalog-migration --tail=50 || true
-              kubectl logs -n eks-store -l app.kubernetes.io/component=orders-migration --tail=50 || true
+            echo "Awaiting completion of bootstrap job eks-store-bootstrap-db-${RUN_ID}..."
+            if ! kubectl wait --for=condition=complete job/eks-store-bootstrap-db-${RUN_ID} -n eks-store --timeout=120s; then
+              echo "❌ Database Bootstrap Job failed or timed out!"
+              kubectl describe job eks-store-bootstrap-db-${RUN_ID} -n eks-store || true
+              kubectl logs -n eks-store job/eks-store-bootstrap-db-${RUN_ID} --all-containers --tail=200 || true
+              exit 1
             fi
+            echo "✅ Database Bootstrap complete! Logs:"
+            kubectl logs -n eks-store job/eks-store-bootstrap-db-${RUN_ID} --all-containers --tail=50 || true
 
-            echo "Running Catalog Seed..."
-            kubectl apply -f k8s/jobs/catalog-seed.yaml
-            if ! kubectl wait --for=condition=complete job/eks-store-catalog-seed -n eks-store --timeout=90s; then
-              echo "=== Catalog Seed Pod Logs ==="
-              kubectl logs -n eks-store -l app.kubernetes.io/component=catalog-seed --tail=50 || true
+            echo "=== Executing Database Migration Jobs ==="
+            cat <<EOF | kubectl apply -f -
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: eks-store-catalog-migration-${RUN_ID}
+  namespace: eks-store
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 180
+  template:
+    spec:
+      serviceAccountName: catalog-service-sa
+      restartPolicy: OnFailure
+      containers:
+        - name: catalog-migration
+          image: ${REGISTRY}/${PROJECT_NAME}-catalog:${TAG}
+          imagePullPolicy: Always
+          command: ["alembic", "upgrade", "head"]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: catalog-db-sync-secret
+                  key: DATABASE_URL
+EOF
+
+            cat <<EOF | kubectl apply -f -
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: eks-store-orders-migration-${RUN_ID}
+  namespace: eks-store
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 180
+  template:
+    spec:
+      serviceAccountName: order-service-sa
+      restartPolicy: OnFailure
+      containers:
+        - name: orders-migration
+          image: ${REGISTRY}/${PROJECT_NAME}-orders:${TAG}
+          imagePullPolicy: Always
+          command: ["alembic", "upgrade", "head"]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: order-db-sync-secret
+                  key: DATABASE_URL
+EOF
+
+            echo "Awaiting completion of migration jobs..."
+            if ! kubectl wait --for=condition=complete job/eks-store-catalog-migration-${RUN_ID} job/eks-store-orders-migration-${RUN_ID} -n eks-store --timeout=120s; then
+              echo "❌ Database Migrations failed or timed out!"
+              kubectl describe job eks-store-catalog-migration-${RUN_ID} -n eks-store || true
+              kubectl logs -n eks-store job/eks-store-catalog-migration-${RUN_ID} --all-containers --tail=100 || true
+              kubectl describe job eks-store-orders-migration-${RUN_ID} -n eks-store || true
+              kubectl logs -n eks-store job/eks-store-orders-migration-${RUN_ID} --all-containers --tail=100 || true
+              exit 1
             fi
+            echo "✅ Database Migrations complete!"
+
+            echo "=== Executing Catalog Seed Job ==="
+            cat <<EOF | kubectl apply -f -
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: eks-store-catalog-seed-${RUN_ID}
+  namespace: eks-store
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 180
+  template:
+    spec:
+      serviceAccountName: catalog-service-sa
+      restartPolicy: OnFailure
+      containers:
+        - name: catalog-seed
+          image: ${REGISTRY}/${PROJECT_NAME}-seed:${TAG}
+          imagePullPolicy: Always
+          command: ["python", "scripts/import_catalog.py"]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: catalog-db-sync-secret
+                  key: DATABASE_URL
+EOF
+
+            echo "Awaiting completion of catalog seed job..."
+            if ! kubectl wait --for=condition=complete job/eks-store-catalog-seed-${RUN_ID} -n eks-store --timeout=120s; then
+              echo "❌ Catalog Seed failed or timed out!"
+              kubectl describe job eks-store-catalog-seed-${RUN_ID} -n eks-store || true
+              kubectl logs -n eks-store job/eks-store-catalog-seed-${RUN_ID} --all-containers --tail=100 || true
+              exit 1
+            fi
+            echo "✅ Catalog Seed complete! Logs:"
+            kubectl logs -n eks-store job/eks-store-catalog-seed-${RUN_ID} --all-containers --tail=30 || true
 
             echo "=== Deploying Microservice Workloads ==="
+            sed -i "s|407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-frontend:latest|${REGISTRY}/${PROJECT_NAME}-frontend:${TAG}|g" k8s/04-frontend.yaml
+            sed -i "s|407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-catalog:latest|${REGISTRY}/${PROJECT_NAME}-catalog:${TAG}|g" k8s/05-catalog.yaml
+            sed -i "s|407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-orders:latest|${REGISTRY}/${PROJECT_NAME}-orders:${TAG}|g" k8s/06-orders.yaml
+
             kubectl apply -f k8s/04-frontend.yaml
             kubectl apply -f k8s/05-catalog.yaml
             kubectl apply -f k8s/06-orders.yaml
 
+            echo "Restarting deployments to ensure newest secrets and clean database connections..."
+            kubectl rollout restart deployment/frontend deployment/catalog-service deployment/order-service -n eks-store
+
             echo "Awaiting deployment rollouts..."
-            kubectl rollout status deployment/frontend -n eks-store --timeout=90s || true
-            kubectl rollout status deployment/catalog-service -n eks-store --timeout=90s || true
-            kubectl rollout status deployment/order-service -n eks-store --timeout=90s || true
+            kubectl rollout status deployment/frontend -n eks-store --timeout=120s
+            kubectl rollout status deployment/catalog-service -n eks-store --timeout=120s
+            kubectl rollout status deployment/order-service -n eks-store --timeout=120s
 
           else
             echo "=== Deploying using Helm ==="
@@ -497,6 +671,10 @@ jobs:
           kubectl get pods -n eks-store -o wide || true
           echo "=== Jobs in eks-store ==="
           kubectl get jobs -n eks-store || true
+          echo "=== Describe Jobs in eks-store ==="
+          kubectl describe jobs -n eks-store || true
+          echo "=== Events in eks-store ==="
+          kubectl get events -n eks-store --sort-by='.lastTimestamp' || true
           echo "=== Detailed Pod Status & Events ==="
           kubectl describe pods -n eks-store || true
           echo "=== Container Logs ==="

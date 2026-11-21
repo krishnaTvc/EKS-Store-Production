@@ -30,10 +30,10 @@ def get_connection_params():
         if host and user and password:
             return host, port, user, password
 
-    host = os.getenv("RDS_HOST") or os.getenv("DB_HOST", "localhost")
-    port = os.getenv("RDS_PORT") or os.getenv("DB_PORT", "5432")
-    user = os.getenv("RDS_MASTER_USER") or os.getenv("DB_MASTER_USER", "postgres")
-    password = os.getenv("RDS_MASTER_PASSWORD") or os.getenv("DB_MASTER_PASSWORD", "postgrespassword")
+    host = (os.getenv("RDS_HOST") or os.getenv("DB_HOST", "localhost")).strip()
+    port = (os.getenv("RDS_PORT") or os.getenv("DB_PORT", "5432")).strip()
+    user = (os.getenv("RDS_MASTER_USER") or os.getenv("DB_MASTER_USER", "postgres")).strip()
+    password = (os.getenv("RDS_MASTER_PASSWORD") or os.getenv("DB_MASTER_PASSWORD", "postgrespassword")).strip()
     return host, port, user, password
 
 
@@ -45,8 +45,8 @@ def get_app_credentials():
         ord_p = (s_path / "order_password").read_text().strip() if (s_path / "order_password").is_file() else None
         if cat_p and ord_p:
             return cat_p, ord_p
-    catalog_pass = os.getenv("CATALOG_DB_PASSWORD", "catalog_pass")
-    order_pass = os.getenv("ORDER_DB_PASSWORD", "order_pass")
+    catalog_pass = (os.getenv("CATALOG_DB_PASSWORD") or "catalog_pass").strip()
+    order_pass = (os.getenv("ORDER_DB_PASSWORD") or "order_pass").strip()
     return catalog_pass, order_pass
 
 
@@ -106,9 +106,27 @@ def bootstrap():
             db_conn_kwargs["dbname"] = dbname
             with psycopg.connect(**db_conn_kwargs) as conn:
                 with conn.cursor() as cur:
+                    cur.execute(sql.SQL("GRANT ALL ON DATABASE {} TO {}").format(sql.Identifier(dbname), sql.Identifier(owner)))
+                    try:
+                        cur.execute(sql.SQL("ALTER SCHEMA public OWNER TO {}").format(sql.Identifier(owner)))
+                    except Exception as schema_err:
+                        logger.warning(f"Could not alter public schema owner on {dbname}: {schema_err}")
                     cur.execute(sql.SQL("GRANT ALL ON SCHEMA public TO {}").format(sql.Identifier(owner)))
                     cur.execute(sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO {}").format(sql.Identifier(owner)))
                     cur.execute(sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO {}").format(sql.Identifier(owner)))
+
+        # 4. Self-test connection as catalog_user and order_user
+        for dbname, user, pwd in [("catalog", "catalog_user", catalog_pass), ("orders", "order_user", order_pass)]:
+            logger.info(f"Verifying live connection as '{user}' to database '{dbname}'...")
+            test_kwargs = dict(conn_kwargs)
+            test_kwargs["dbname"] = dbname
+            test_kwargs["user"] = user
+            test_kwargs["password"] = pwd
+            with psycopg.connect(**test_kwargs) as test_conn:
+                with test_conn.cursor() as test_cur:
+                    test_cur.execute("SELECT current_user, current_database()")
+                    row = test_cur.fetchone()
+                    logger.info(f"Verified connection: user='{row[0]}', database='{row[1]}'!")
 
         logger.info("Database bootstrap completed successfully.")
         return 0
