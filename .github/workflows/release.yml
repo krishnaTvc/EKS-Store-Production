@@ -26,11 +26,11 @@ on:
       deployment_method:
         description: "Deployment tool to use"
         required: true
-        default: "helm"
+        default: "kubectl"
         type: choice
         options:
-          - helm
           - kubectl
+          - helm
 
 concurrency:
   group: deployment-${{ github.ref }}
@@ -44,7 +44,7 @@ env:
   AWS_REGION: eu-north-1
   PROJECT_NAME: eks-store
   ENVIRONMENT: ${{ inputs.environment || 'lab' }}
-  DEPLOYMENT_METHOD: ${{ inputs.deployment_method || 'helm' }}
+  DEPLOYMENT_METHOD: ${{ inputs.deployment_method || 'kubectl' }}
 
 jobs:
   validate:
@@ -166,6 +166,7 @@ jobs:
           fi
           echo "Connecting to EKS Cluster: $TARGET_CLUSTER"
           aws eks update-kubeconfig --region "$AWS_REGION" --name "$TARGET_CLUSTER"
+          echo "TARGET_CLUSTER=$TARGET_CLUSTER" >> $GITHUB_ENV
 
       - name: Login to Amazon ECR
         id: login-ecr
@@ -208,6 +209,56 @@ jobs:
             echo "CSIDriver tokenRequests is already properly configured with sts.amazonaws.com."
           fi
 
+      - name: Ensure AWS Load Balancer Controller and Subnets
+        run: |
+          echo "Resolving Cluster VPC ID..."
+          VPC_ID=$(aws eks describe-cluster --name "$TARGET_CLUSTER" --region "$AWS_REGION" --query "cluster.resourcesVpcConfig.vpcId" --output text)
+          echo "Cluster VPC ID: $VPC_ID"
+          echo "VPC_ID=$VPC_ID" >> $GITHUB_ENV
+
+          echo "Discovering Public Subnets in VPC $VPC_ID..."
+          PUBLIC_SUBNETS=$(aws ec2 describe-subnets --region "$AWS_REGION" \
+            --filters "Name=vpc-id,Values=$VPC_ID" "Name=map-public-ip-on-launch,Values=true" \
+            --query "Subnets[*].SubnetId" --output text | tr '\t' ',')
+
+          if [ -z "$PUBLIC_SUBNETS" ] || [ "$PUBLIC_SUBNETS" = "None" ]; then
+            echo "Searching by Name tag for public subnets..."
+            PUBLIC_SUBNETS=$(aws ec2 describe-subnets --region "$AWS_REGION" \
+              --filters "Name=vpc-id,Values=$VPC_ID" "Name=tag:Name,Values=*public*" \
+              --query "Subnets[*].SubnetId" --output text | tr '\t' ',')
+          fi
+
+          echo "Discovered Public Subnets: $PUBLIC_SUBNETS"
+
+          if [ -n "$PUBLIC_SUBNETS" ]; then
+            SUBNET_LIST=$(echo "$PUBLIC_SUBNETS" | tr ',' ' ')
+            echo "Ensuring required kubernetes.io/role/elb=1 tag on subnets: $SUBNET_LIST"
+            aws ec2 create-tags --region "$AWS_REGION" --resources $SUBNET_LIST --tags Key=kubernetes.io/role/elb,Value=1 || true
+          fi
+          echo "PUBLIC_SUBNETS=$PUBLIC_SUBNETS" >> $GITHUB_ENV
+
+          echo "Checking AWS Load Balancer Controller in kube-system..."
+          if ! kubectl get deployment -n kube-system aws-load-balancer-controller >/dev/null 2>&1; then
+            echo "AWS Load Balancer Controller is NOT installed in kube-system. Installing via Helm..."
+            helm repo add eks https://aws.github.io/eks-charts --force-update
+            helm repo update
+            
+            ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+            ALB_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${PROJECT_NAME}-alb-controller-role-${ENVIRONMENT}"
+            
+            helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
+              --namespace kube-system \
+              --set clusterName="$TARGET_CLUSTER" \
+              --set serviceAccount.create=true \
+              --set serviceAccount.name=aws-load-balancer-controller \
+              --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="$ALB_ROLE_ARN" \
+              --set region="$AWS_REGION" \
+              --set vpcId="$VPC_ID"
+          fi
+
+          echo "Awaiting AWS Load Balancer Controller readiness..."
+          kubectl rollout status deployment/aws-load-balancer-controller -n kube-system --timeout=120s || true
+
       - name: Deploy Workloads
         env:
           TAG: ${{ needs.build-and-publish.outputs.image_tag }}
@@ -231,6 +282,12 @@ jobs:
             sed -i "s|407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-catalog:latest|${REGISTRY}/${PROJECT_NAME}-catalog:${TAG}|g" k8s/05-catalog.yaml
             sed -i "s|407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-orders:latest|${REGISTRY}/${PROJECT_NAME}-orders:${TAG}|g" k8s/06-orders.yaml
             
+            # Inject subnets into Ingress
+            if [ -n "$PUBLIC_SUBNETS" ]; then
+              echo "Annotating Ingress with explicit public subnets: $PUBLIC_SUBNETS"
+              sed -i "s|alb.ingress.kubernetes.io/scheme: internet-facing|alb.ingress.kubernetes.io/scheme: internet-facing\n    alb.ingress.kubernetes.io/subnets: \"${PUBLIC_SUBNETS}\"|g" k8s/07-ingress.yaml
+            fi
+
             kubectl apply -f k8s/04-frontend.yaml
             kubectl apply -f k8s/05-catalog.yaml
             kubectl apply -f k8s/06-orders.yaml
@@ -260,6 +317,11 @@ jobs:
               kubectl delete pods -n eks-store --all --force --grace-period=0 --ignore-not-found=true || true
             fi
 
+            EXTRA_HELM_ARGS=""
+            if [ -n "$PUBLIC_SUBNETS" ]; then
+              EXTRA_HELM_ARGS="--set ingress.annotations.alb\\.ingress\\.kubernetes\\.io/subnets=${PUBLIC_SUBNETS}"
+            fi
+
             helm upgrade --install eks-store helm/eks-store \
               --namespace eks-store --create-namespace \
               --values helm/eks-store/values.yaml \
@@ -276,6 +338,7 @@ jobs:
               --set aws.iamRoles.orderRoleArn="${ORDER_ROLE}" \
               --set aws.iamRoles.dbJobRoleArn="${DB_JOB_ROLE}" \
               --set aws.s3.assetsBucketName="${ASSETS_BUCKET}" \
+              $EXTRA_HELM_ARGS \
               --wait --timeout 5m
           fi
 
@@ -291,18 +354,19 @@ jobs:
         run: |
           echo "Resolving ALB Ingress Hostname..."
           ALB_HOSTNAME=""
-          for i in {1..30}; do
+          for i in {1..36}; do
             ALB_HOSTNAME=$(kubectl get ingress eks-store-ingress -n eks-store -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
             if [ -n "$ALB_HOSTNAME" ]; then
               break
             fi
-            echo "Waiting for ALB hostname... ($i/30)"
+            echo "Waiting for ALB hostname to be assigned... ($i/36)"
+            kubectl get ingress eks-store-ingress -n eks-store || true
             sleep 10
           done
 
           if [ -z "$ALB_HOSTNAME" ]; then
             echo "ALB Ingress Hostname could not be resolved within timeout."
-            kubectl get ingress -n eks-store || true
+            kubectl describe ingress eks-store-ingress -n eks-store || true
             exit 1
           fi
 
@@ -318,6 +382,14 @@ jobs:
       - name: Diagnostic Dumps on Failure
         if: failure()
         run: |
+          echo "=== Ingress Details & Events ==="
+          kubectl describe ingress -n eks-store eks-store-ingress || true
+          echo "=== Ingress Classes ==="
+          kubectl get ingressclass || true
+          echo "=== AWS Load Balancer Controller Pods ==="
+          kubectl get pods -n kube-system -l "app.kubernetes.io/name=aws-load-balancer-controller" || true
+          echo "=== AWS Load Balancer Controller Logs ==="
+          kubectl logs -n kube-system -l "app.kubernetes.io/name=aws-load-balancer-controller" --tail=100 || true
           echo "=== Pods in eks-store ==="
           kubectl get pods -n eks-store -o wide || true
           echo "=== Jobs in eks-store ==="
