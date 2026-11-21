@@ -23,19 +23,9 @@ spec:
           image: 407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-seed:latest
           imagePullPolicy: Always
           command: ["python", "scripts/bootstrap_databases.py"]
+          envFrom:
+            - secretRef:
+                name: eks-store-db-secret
           env:
-            - name: DATABASE_SECRET_DIR
-              value: "/mnt/secrets-store"
             - name: PGSSLMODE
               value: "prefer"
-          volumeMounts:
-            - name: secrets-store
-              mountPath: "/mnt/secrets-store"
-              readOnly: true
-      volumes:
-        - name: secrets-store
-          csi:
-            driver: secrets-store.csi.k8s.io
-            readOnly: true
-            volumeAttributes:
-              secretProviderClass: eks-store-aws-secrets-db-job

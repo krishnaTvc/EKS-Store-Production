@@ -26,24 +26,10 @@ spec:
           image: "{{ .Values.images.seed.repository }}:{{ .Values.images.seed.tag }}"
           imagePullPolicy: {{ .Values.images.pullPolicy }}
           command: ["python", "scripts/bootstrap_databases.py"]
+          envFrom:
+            - secretRef:
+                name: eks-store-db-secret
           env:
-            - name: DATABASE_SECRET_DIR
-              value: "/mnt/secrets-store"
             - name: PGSSLMODE
               value: "prefer"
-          {{- if .Values.aws.secretsStore.enabled }}
-          volumeMounts:
-            - name: secrets-store
-              mountPath: "/mnt/secrets-store"
-              readOnly: true
-          {{- end }}
-      {{- if .Values.aws.secretsStore.enabled }}
-      volumes:
-        - name: secrets-store
-          csi:
-            driver: secrets-store.csi.k8s.io
-            readOnly: true
-            volumeAttributes:
-              secretProviderClass: {{ .Values.aws.secretsStore.secretProviderClassName }}-db-job
-      {{- end }}
 {{- end }}
