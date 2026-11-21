@@ -146,7 +146,26 @@ jobs:
 
       - name: Update Kubeconfig
         run: |
-          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.PROJECT_NAME }}-cluster-${{ env.ENVIRONMENT }}
+          echo "Resolving EKS Cluster in region ${{ env.AWS_REGION }}..."
+          TARGET_CLUSTER="${PROJECT_NAME}-${ENVIRONMENT}"
+          if ! aws eks describe-cluster --region "$AWS_REGION" --name "$TARGET_CLUSTER" >/dev/null 2>&1; then
+            if aws eks describe-cluster --region "$AWS_REGION" --name "${PROJECT_NAME}-cluster-${ENVIRONMENT}" >/dev/null 2>&1; then
+              TARGET_CLUSTER="${PROJECT_NAME}-cluster-${ENVIRONMENT}"
+            else
+              DISCOVERED=$(aws eks list-clusters --region "$AWS_REGION" --query "clusters[?contains(@, '${PROJECT_NAME}')]" --output text | awk '{print $1}')
+              if [ -n "$DISCOVERED" ] && [ "$DISCOVERED" != "None" ]; then
+                TARGET_CLUSTER="$DISCOVERED"
+              else
+                echo "::error::No EKS cluster found for project '${PROJECT_NAME}' in region '${AWS_REGION}'!"
+                echo "Available clusters in region:"
+                aws eks list-clusters --region "$AWS_REGION" --output table || true
+                echo "Please run the 'Terraform Infrastructure Manager' workflow (stack: all) to provision the EKS cluster."
+                exit 1
+              fi
+            fi
+          fi
+          echo "Connecting to EKS Cluster: $TARGET_CLUSTER"
+          aws eks update-kubeconfig --region "$AWS_REGION" --name "$TARGET_CLUSTER"
 
       - name: Login to Amazon ECR
         id: login-ecr
