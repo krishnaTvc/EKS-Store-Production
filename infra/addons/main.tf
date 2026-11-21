@@ -198,6 +198,11 @@ resource "helm_release" "secrets_store_csi_driver" {
     name  = "enableSecretRotation"
     value = "true"
   }
+
+  set {
+    name  = "tokenRequests[0].audience"
+    value = "sts.amazonaws.com"
+  }
 }
 
 resource "helm_release" "aws_secrets_manager_provider" {

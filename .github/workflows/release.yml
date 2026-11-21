@@ -155,6 +155,33 @@ jobs:
         with:
           version: "v3.15.0"
 
+      - name: Ensure CSIDriver TokenRequests for AWS IRSA
+        run: |
+          echo "Checking CSIDriver secrets-store.csi.k8s.io spec.tokenRequests..."
+          TOKEN_REQ=$(kubectl get csidriver secrets-store.csi.k8s.io -o jsonpath='{.spec.tokenRequests}' 2>/dev/null || echo "")
+          if [[ "$TOKEN_REQ" != *"sts.amazonaws.com"* ]]; then
+            echo "Configuring tokenRequests on CSIDriver for AWS STS IRSA..."
+            kubectl delete csidriver secrets-store.csi.k8s.io --ignore-not-found=true
+            cat <<'EOF' | kubectl apply -f -
+apiVersion: storage.k8s.io/v1
+kind: CSIDriver
+metadata:
+  name: secrets-store.csi.k8s.io
+spec:
+  attachRequired: false
+  podInfoOnMount: true
+  volumeLifecycleModes:
+  - Ephemeral
+  tokenRequests:
+  - audience: sts.amazonaws.com
+EOF
+            echo "Restarting Secrets Store CSI driver daemonset..."
+            kubectl rollout restart daemonset/secrets-store-csi-driver -n kube-system || true
+            kubectl rollout status daemonset/secrets-store-csi-driver -n kube-system --timeout=60s || true
+          else
+            echo "CSIDriver tokenRequests is already properly configured with sts.amazonaws.com."
+          fi
+
       - name: Deploy Application Helm Chart
         env:
           TAG: ${{ needs.build-and-publish.outputs.image_tag }}
@@ -166,6 +193,7 @@ jobs:
             echo "Previous release is in '$STATUS' state; cleaning up before fresh install..."
             helm uninstall eks-store -n eks-store || true
             kubectl delete jobs -n eks-store --all --ignore-not-found=true || true
+            kubectl delete pods -n eks-store --all --force --grace-period=0 --ignore-not-found=true || true
           fi
 
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
