@@ -40,6 +40,8 @@ def resolve_database_url() -> str:
 
 
 db_url = resolve_database_url()
+if "sslmode=verify-full" in db_url:
+    db_url = db_url.replace("sslmode=verify-full", "sslmode=require")
 connect_args = {}
 if db_url.startswith("sqlite"):
     connect_args = {"check_same_thread": False}

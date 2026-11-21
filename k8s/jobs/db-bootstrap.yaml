@@ -26,6 +26,8 @@ spec:
           env:
             - name: DATABASE_SECRET_DIR
               value: "/mnt/secrets-store"
+            - name: PGSSLMODE
+              value: "prefer"
           volumeMounts:
             - name: secrets-store
               mountPath: "/mnt/secrets-store"

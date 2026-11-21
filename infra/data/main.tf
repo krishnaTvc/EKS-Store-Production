@@ -139,7 +139,7 @@ resource "aws_secretsmanager_secret_version" "catalog_db" {
     username     = "catalog_user"
     password     = random_password.catalog_db_password.result
     dbname       = "catalog"
-    DATABASE_URL = "postgresql+psycopg://catalog_user:${urlencode(random_password.catalog_db_password.result)}@${aws_db_instance.postgres.address}:5432/catalog?sslmode=verify-full"
+    DATABASE_URL = "postgresql+psycopg://catalog_user:${urlencode(random_password.catalog_db_password.result)}@${aws_db_instance.postgres.address}:5432/catalog?sslmode=require"
   })
 }
 
@@ -157,7 +157,7 @@ resource "aws_secretsmanager_secret_version" "order_db" {
     username     = "order_user"
     password     = random_password.order_db_password.result
     dbname       = "orders"
-    DATABASE_URL = "postgresql+psycopg://order_user:${urlencode(random_password.order_db_password.result)}@${aws_db_instance.postgres.address}:5432/orders?sslmode=verify-full"
+    DATABASE_URL = "postgresql+psycopg://order_user:${urlencode(random_password.order_db_password.result)}@${aws_db_instance.postgres.address}:5432/orders?sslmode=require"
   })
 }
 

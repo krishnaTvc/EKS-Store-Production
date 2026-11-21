@@ -251,6 +251,37 @@ jobs:
             --policy-name "ALBControllerAddTagsFix" \
             --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["elasticloadbalancing:AddTags","elasticloadbalancing:RemoveTags"],"Resource":"*"}]}' || true
 
+          echo "Ensuring IAM permissions for database jobs and microservices..."
+          DB_JOB_ROLE_NAME="${PROJECT_NAME}-db-job-sa-role-${ENVIRONMENT}"
+          CATALOG_ROLE_NAME="${PROJECT_NAME}-catalog-sa-role-${ENVIRONMENT}"
+          ORDER_ROLE_NAME="${PROJECT_NAME}-order-sa-role-${ENVIRONMENT}"
+          
+          for ROLE in "$DB_JOB_ROLE_NAME" "$CATALOG_ROLE_NAME" "$ORDER_ROLE_NAME"; do
+            echo "Granting Secrets Manager and KMS decrypt permissions to $ROLE..."
+            aws iam put-role-policy \
+              --role-name "$ROLE" \
+              --policy-name "MicroserviceSecretsManagerAccess" \
+              --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["secretsmanager:GetSecretValue","secretsmanager:DescribeSecret","kms:Decrypt"],"Resource":"*"}]}' || true
+          done
+
+          echo "Ensuring RDS security group allows port 5432 from VPC..."
+          VPC_CIDR=$(aws ec2 describe-vpcs --region "$AWS_REGION" --vpc-ids "$VPC_ID" --query "Vpcs[0].CidrBlock" --output text 2>/dev/null || echo "10.0.0.0/16")
+          RDS_SG_ID=$(aws ec2 describe-security-groups --region "$AWS_REGION" --filters "Name=vpc-id,Values=$VPC_ID" "Name=group-name,Values=*rds-sg*" --query "SecurityGroups[0].GroupId" --output text 2>/dev/null || echo "")
+          if [ -n "$RDS_SG_ID" ] && [ "$RDS_SG_ID" != "None" ]; then
+            echo "Authorizing ingress on RDS Security Group $RDS_SG_ID for VPC CIDR $VPC_CIDR on port 5432..."
+            aws ec2 authorize-security-group-ingress --region "$AWS_REGION" --group-id "$RDS_SG_ID" --protocol tcp --port 5432 --cidr "$VPC_CIDR" || true
+          fi
+
+          echo "Ensuring database connection URLs use sslmode=require..."
+          for S_NAME in "${PROJECT_NAME}/${ENVIRONMENT}/catalog-db" "${PROJECT_NAME}/${ENVIRONMENT}/order-db"; do
+            SEC_VAL=$(aws secretsmanager get-secret-value --region "$AWS_REGION" --secret-id "$S_NAME" --query "SecretString" --output text 2>/dev/null || echo "")
+            if echo "$SEC_VAL" | grep -q "sslmode=verify-full"; then
+              UPDATED_SEC=$(echo "$SEC_VAL" | sed 's/sslmode=verify-full/sslmode=require/g')
+              aws secretsmanager put-secret-value --region "$AWS_REGION" --secret-id "$S_NAME" --secret-string "$UPDATED_SEC" || true
+              echo "Updated $S_NAME to sslmode=require"
+            fi
+          done
+
           echo "Checking AWS Load Balancer Controller in kube-system..."
           if ! kubectl get deployment -n kube-system aws-load-balancer-controller >/dev/null 2>&1; then
             echo "AWS Load Balancer Controller is NOT installed in kube-system. Installing via Helm..."
@@ -314,12 +345,29 @@ jobs:
             sed -i "s|407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-orders:latest|${REGISTRY}/${PROJECT_NAME}-orders:${TAG}|g" k8s/jobs/orders-migration.yaml
             
             kubectl apply -f k8s/jobs/db-bootstrap.yaml
-            kubectl wait --for=condition=complete job/eks-store-bootstrap-db -n eks-store --timeout=120s || true
+            if ! kubectl wait --for=condition=complete job/eks-store-bootstrap-db -n eks-store --timeout=120s; then
+              echo "=== Bootstrap DB Pod Logs ==="
+              kubectl logs -n eks-store -l app.kubernetes.io/component=db-bootstrap --tail=100 || true
+            fi
+
             kubectl apply -f k8s/jobs/catalog-migration.yaml
             kubectl apply -f k8s/jobs/orders-migration.yaml
-            kubectl wait --for=condition=complete job/eks-store-catalog-migration job/eks-store-orders-migration -n eks-store --timeout=120s || true
+            if ! kubectl wait --for=condition=complete job/eks-store-catalog-migration job/eks-store-orders-migration -n eks-store --timeout=120s; then
+              echo "=== Migration Pod Logs ==="
+              kubectl logs -n eks-store -l app.kubernetes.io/component=catalog-migration --tail=50 || true
+              kubectl logs -n eks-store -l app.kubernetes.io/component=orders-migration --tail=50 || true
+            fi
+
             kubectl apply -f k8s/jobs/catalog-seed.yaml
-            kubectl wait --for=condition=complete job/eks-store-catalog-seed -n eks-store --timeout=120s || true
+            if ! kubectl wait --for=condition=complete job/eks-store-catalog-seed -n eks-store --timeout=120s; then
+              echo "=== Catalog Seed Pod Logs ==="
+              kubectl logs -n eks-store -l app.kubernetes.io/component=catalog-seed --tail=50 || true
+            fi
+
+            echo "Refreshing catalog and orders deployments to connect to seeded database..."
+            kubectl rollout restart deployment/catalog-service deployment/order-service -n eks-store
+            kubectl rollout status deployment/catalog-service -n eks-store --timeout=120s || true
+            kubectl rollout status deployment/order-service -n eks-store --timeout=120s || true
 
           else
             echo "=== Deploying using Helm ==="

@@ -29,6 +29,8 @@ spec:
           env:
             - name: DATABASE_SECRET_DIR
               value: "/mnt/secrets-store"
+            - name: PGSSLMODE
+              value: "prefer"
           {{- if .Values.aws.secretsStore.enabled }}
           volumeMounts:
             - name: secrets-store

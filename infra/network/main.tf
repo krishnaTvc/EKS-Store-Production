@@ -248,18 +248,19 @@ resource "aws_security_group" "eks_nodes" {
   }
 }
 
-# RDS PostgreSQL Security Group: Strictly port 5432 from EKS Nodes
+# RDS PostgreSQL Security Group: Strictly port 5432 from EKS Nodes and VPC
 resource "aws_security_group" "rds" {
   name        = "${var.project_name}-rds-sg-${var.environment}"
-  description = "Controls database access; allows port 5432 exclusively from EKS nodes"
+  description = "Controls database access; allows port 5432 exclusively from EKS nodes and VPC"
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    description     = "PostgreSQL port 5432 from EKS nodes"
+    description     = "PostgreSQL port 5432 from EKS nodes and VPC CIDR"
     from_port       = 5432
     to_port         = 5432
     protocol        = "tcp"
     security_groups = [aws_security_group.eks_nodes.id]
+    cidr_blocks     = [aws_vpc.main.cidr_block]
   }
 
   egress {

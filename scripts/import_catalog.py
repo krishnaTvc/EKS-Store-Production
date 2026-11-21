@@ -71,6 +71,8 @@ def import_catalog(
         "DATABASE_URL",
         "postgresql+psycopg://catalog_user:catalog_pass@localhost:5432/catalog"
     )
+    if db_url and "sslmode=verify-full" in db_url:
+        db_url = db_url.replace("sslmode=verify-full", "sslmode=require")
 
     csv_file = Path(csv_path)
     if not csv_file.exists():
