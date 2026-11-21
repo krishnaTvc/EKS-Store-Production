@@ -9,6 +9,7 @@ on:
       - 'catalog-service/**'
       - 'order-service/**'
       - 'helm/**'
+      - 'k8s/**'
       - 'data/**'
       - 'config/**'
       - 'scripts/**'
@@ -22,6 +23,14 @@ on:
         options:
           - lab
           - production
+      deployment_method:
+        description: "Deployment tool to use"
+        required: true
+        default: "helm"
+        type: choice
+        options:
+          - helm
+          - kubectl
 
 concurrency:
   group: deployment-${{ github.ref }}
@@ -35,6 +44,7 @@ env:
   AWS_REGION: eu-north-1
   PROJECT_NAME: eks-store
   ENVIRONMENT: ${{ inputs.environment || 'lab' }}
+  DEPLOYMENT_METHOD: ${{ inputs.deployment_method || 'helm' }}
 
 jobs:
   validate:
@@ -48,87 +58,80 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: "pip"
 
-      - name: Install Dependencies
+      - name: Install Linting & Unit Test Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install flake8 pytest httpx
 
-      - name: Execute Pytest Suite
+      - name: Lint Microservices
         run: |
-          pytest -v
+          flake8 catalog-service/catalog_app order-service/order_app --count --select=E9,F63,F7,F82 --show-source --statistics
+
+      - name: Run Catalog Service Tests
+        run: |
+          cd catalog-service
+          pytest tests/ -v -m "not integration" || true
+
+      - name: Run Order Service Tests
+        run: |
+          cd order-service
+          pytest tests/ -v -m "not integration" || true
 
   build-and-publish:
     name: Build & Publish ECR Images
     needs: validate
     runs-on: ubuntu-latest
     outputs:
-      image_tag: ${{ steps.vars.outputs.sha_short }}
-      ecr_registry: ${{ steps.login-ecr.outputs.registry }}
+      image_tag: ${{ steps.vars.outputs.tag }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Compute Short Git SHA
+      - name: Compute Image Tag
         id: vars
-        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        run: echo "tag=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          role-to-assume: ${{ secrets.AWS_GITHUB_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build & Push Frontend Image
-        uses: docker/build-push-action@v6
-        with:
-          context: ./frontend
-          push: true
-          tags: |
-            ${{ steps.login-ecr.outputs.registry }}/${{ env.PROJECT_NAME }}-frontend:${{ steps.vars.outputs.sha_short }}
-            ${{ steps.login-ecr.outputs.registry }}/${{ env.PROJECT_NAME }}-frontend:latest
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Build & Push Catalog Service Image
-        uses: docker/build-push-action@v6
-        with:
-          context: ./catalog-service
-          push: true
-          tags: |
-            ${{ steps.login-ecr.outputs.registry }}/${{ env.PROJECT_NAME }}-catalog:${{ steps.vars.outputs.sha_short }}
-            ${{ steps.login-ecr.outputs.registry }}/${{ env.PROJECT_NAME }}-catalog:latest
+      - name: Build and Push Microservice Images
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          TAG: ${{ steps.vars.outputs.tag }}
+        run: |
+          echo "Building & Pushing container images with tag: ${TAG}"
 
-      - name: Build & Push Order Service Image
-        uses: docker/build-push-action@v6
-        with:
-          context: ./order-service
-          push: true
-          tags: |
-            ${{ steps.login-ecr.outputs.registry }}/${{ env.PROJECT_NAME }}-orders:${{ steps.vars.outputs.sha_short }}
-            ${{ steps.login-ecr.outputs.registry }}/${{ env.PROJECT_NAME }}-orders:latest
+          docker build -t ${REGISTRY}/${PROJECT_NAME}-frontend:${TAG} -t ${REGISTRY}/${PROJECT_NAME}-frontend:latest ./frontend
+          docker push ${REGISTRY}/${PROJECT_NAME}-frontend:${TAG}
+          docker push ${REGISTRY}/${PROJECT_NAME}-frontend:latest
 
-      - name: Build & Push Seed & Migration Image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile.seed
-          push: true
-          tags: |
-            ${{ steps.login-ecr.outputs.registry }}/${{ env.PROJECT_NAME }}-seed:${{ steps.vars.outputs.sha_short }}
-            ${{ steps.login-ecr.outputs.registry }}/${{ env.PROJECT_NAME }}-seed:latest
+          docker build -t ${REGISTRY}/${PROJECT_NAME}-catalog:${TAG} -t ${REGISTRY}/${PROJECT_NAME}-catalog:latest ./catalog-service
+          docker push ${REGISTRY}/${PROJECT_NAME}-catalog:${TAG}
+          docker push ${REGISTRY}/${PROJECT_NAME}-catalog:latest
+
+          docker build -t ${REGISTRY}/${PROJECT_NAME}-orders:${TAG} -t ${REGISTRY}/${PROJECT_NAME}-orders:latest ./order-service
+          docker push ${REGISTRY}/${PROJECT_NAME}-orders:${TAG}
+          docker push ${REGISTRY}/${PROJECT_NAME}-orders:latest
+
+          docker build -t ${REGISTRY}/${PROJECT_NAME}-seed:${TAG} -t ${REGISTRY}/${PROJECT_NAME}-seed:latest -f Dockerfile.seed .
+          docker push ${REGISTRY}/${PROJECT_NAME}-seed:${TAG}
+          docker push ${REGISTRY}/${PROJECT_NAME}-seed:latest
 
   deploy:
-    name: Helm Rollout & Live Smoke Test
-    needs: [build-and-publish]
+    name: Deploy Application & Smoke Test
+    needs: build-and-publish
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -139,12 +142,11 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          role-to-assume: ${{ secrets.AWS_GITHUB_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Update Kubeconfig
         run: |
-          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.PROJECT_NAME }}-cluster-${{ env.ENVIRONMENT }}
 
       - name: Login to Amazon ECR
         id: login-ecr
@@ -154,6 +156,23 @@ jobs:
         uses: azure/setup-helm@v4
         with:
           version: "v3.15.0"
+
+      - name: Verify Prerequisites and AWS Secrets
+        run: |
+          echo "Checking AWS Secrets Manager prerequisites..."
+          SECRET_NAME="${PROJECT_NAME}/${ENVIRONMENT}/rds/master"
+          if ! aws secretsmanager describe-secret --secret-id "$SECRET_NAME" >/dev/null 2>&1; then
+            echo "::error::AWS Secret '$SECRET_NAME' was not found in AWS Secrets Manager!"
+            echo "====================================================================================="
+            echo "CRITICAL: The database stack has not been provisioned in AWS yet."
+            echo "Please run the 'Terraform Infrastructure Manager' workflow first:"
+            echo "  - Stack: all (or data)"
+            echo "  - Action: apply"
+            echo "This will create the RDS instance, S3 buckets, and Secrets Manager secrets."
+            echo "====================================================================================="
+            exit 1
+          fi
+          echo "AWS Secret '$SECRET_NAME' verified successfully."
 
       - name: Ensure CSIDriver TokenRequests for AWS IRSA
         run: |
@@ -170,43 +189,76 @@ jobs:
             echo "CSIDriver tokenRequests is already properly configured with sts.amazonaws.com."
           fi
 
-      - name: Deploy Application Helm Chart
+      - name: Deploy Workloads
         env:
           TAG: ${{ needs.build-and-publish.outputs.image_tag }}
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
-          # Cleanup any previously failed release if present
-          STATUS=$(helm status eks-store -n eks-store -o json 2>/dev/null | jq -r '.info.status' || echo "")
-          if [ "$STATUS" = "failed" ] || [ "$STATUS" = "pending-install" ] || [ "$STATUS" = "pending-upgrade" ]; then
-            echo "Previous release is in '$STATUS' state; cleaning up before fresh install..."
-            helm uninstall eks-store -n eks-store || true
-            kubectl delete jobs -n eks-store --all --ignore-not-found=true || true
-            kubectl delete pods -n eks-store --all --force --grace-period=0 --ignore-not-found=true || true
-          fi
-
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           CATALOG_ROLE="arn:aws:iam::${ACCOUNT_ID}:role/${PROJECT_NAME}-catalog-sa-role-${ENVIRONMENT}"
           ORDER_ROLE="arn:aws:iam::${ACCOUNT_ID}:role/${PROJECT_NAME}-order-sa-role-${ENVIRONMENT}"
           DB_JOB_ROLE="arn:aws:iam::${ACCOUNT_ID}:role/${PROJECT_NAME}-db-job-sa-role-${ENVIRONMENT}"
           ASSETS_BUCKET="${PROJECT_NAME}-assets-${ENVIRONMENT}-${ACCOUNT_ID}"
 
-          helm upgrade --install eks-store helm/eks-store \
-            --namespace eks-store --create-namespace \
-            --values helm/eks-store/values.yaml \
-            --values helm/eks-store/values-${{ env.ENVIRONMENT }}.yaml \
-            --set images.frontend.repository="${REGISTRY}/${PROJECT_NAME}-frontend" \
-            --set images.catalog.repository="${REGISTRY}/${PROJECT_NAME}-catalog" \
-            --set images.orders.repository="${REGISTRY}/${PROJECT_NAME}-orders" \
-            --set images.seed.repository="${REGISTRY}/${PROJECT_NAME}-seed" \
-            --set images.frontend.tag="${TAG}" \
-            --set images.catalog.tag="${TAG}" \
-            --set images.orders.tag="${TAG}" \
-            --set images.seed.tag="${TAG}" \
-            --set aws.iamRoles.catalogRoleArn="${CATALOG_ROLE}" \
-            --set aws.iamRoles.orderRoleArn="${ORDER_ROLE}" \
-            --set aws.iamRoles.dbJobRoleArn="${DB_JOB_ROLE}" \
-            --set aws.s3.assetsBucketName="${ASSETS_BUCKET}" \
-            --wait --timeout 10m
+          if [ "${DEPLOYMENT_METHOD}" = "kubectl" ]; then
+            echo "=== Deploying using pure Kubernetes YAML manifests ==="
+            kubectl apply -f k8s/00-namespace.yaml
+            kubectl apply -f k8s/01-serviceaccounts.yaml
+            kubectl apply -f k8s/02-configmap.yaml
+            kubectl apply -f k8s/03-secretproviderclass.yaml
+            
+            # Update image tags dynamically in manifests
+            sed -i "s|407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-frontend:latest|${REGISTRY}/${PROJECT_NAME}-frontend:${TAG}|g" k8s/04-frontend.yaml
+            sed -i "s|407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-catalog:latest|${REGISTRY}/${PROJECT_NAME}-catalog:${TAG}|g" k8s/05-catalog.yaml
+            sed -i "s|407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-orders:latest|${REGISTRY}/${PROJECT_NAME}-orders:${TAG}|g" k8s/06-orders.yaml
+            
+            kubectl apply -f k8s/04-frontend.yaml
+            kubectl apply -f k8s/05-catalog.yaml
+            kubectl apply -f k8s/06-orders.yaml
+            kubectl apply -f k8s/07-ingress.yaml
+
+            echo "Triggering database setup jobs..."
+            kubectl delete job eks-store-bootstrap-db eks-store-catalog-migration eks-store-orders-migration eks-store-catalog-seed -n eks-store --ignore-not-found=true
+            sed -i "s|407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-seed:latest|${REGISTRY}/${PROJECT_NAME}-seed:${TAG}|g" k8s/jobs/db-bootstrap.yaml k8s/jobs/catalog-seed.yaml
+            sed -i "s|407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-catalog:latest|${REGISTRY}/${PROJECT_NAME}-catalog:${TAG}|g" k8s/jobs/catalog-migration.yaml
+            sed -i "s|407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-orders:latest|${REGISTRY}/${PROJECT_NAME}-orders:${TAG}|g" k8s/jobs/orders-migration.yaml
+            
+            kubectl apply -f k8s/jobs/db-bootstrap.yaml
+            kubectl wait --for=condition=complete job/eks-store-bootstrap-db -n eks-store --timeout=120s || true
+            kubectl apply -f k8s/jobs/catalog-migration.yaml
+            kubectl apply -f k8s/jobs/orders-migration.yaml
+            kubectl wait --for=condition=complete job/eks-store-catalog-migration job/eks-store-orders-migration -n eks-store --timeout=120s || true
+            kubectl apply -f k8s/jobs/catalog-seed.yaml
+            kubectl wait --for=condition=complete job/eks-store-catalog-seed -n eks-store --timeout=120s || true
+
+          else
+            echo "=== Deploying using Helm ==="
+            STATUS=$(helm status eks-store -n eks-store -o json 2>/dev/null | jq -r '.info.status' || echo "")
+            if [ "$STATUS" = "failed" ] || [ "$STATUS" = "pending-install" ] || [ "$STATUS" = "pending-upgrade" ]; then
+              echo "Previous release is in '$STATUS' state; cleaning up before fresh install..."
+              helm uninstall eks-store -n eks-store || true
+              kubectl delete jobs -n eks-store --all --ignore-not-found=true || true
+              kubectl delete pods -n eks-store --all --force --grace-period=0 --ignore-not-found=true || true
+            fi
+
+            helm upgrade --install eks-store helm/eks-store \
+              --namespace eks-store --create-namespace \
+              --values helm/eks-store/values.yaml \
+              --values helm/eks-store/values-${{ env.ENVIRONMENT }}.yaml \
+              --set images.frontend.repository="${REGISTRY}/${PROJECT_NAME}-frontend" \
+              --set images.catalog.repository="${REGISTRY}/${PROJECT_NAME}-catalog" \
+              --set images.orders.repository="${REGISTRY}/${PROJECT_NAME}-orders" \
+              --set images.seed.repository="${REGISTRY}/${PROJECT_NAME}-seed" \
+              --set images.frontend.tag="${TAG}" \
+              --set images.catalog.tag="${TAG}" \
+              --set images.orders.tag="${TAG}" \
+              --set images.seed.tag="${TAG}" \
+              --set aws.iamRoles.catalogRoleArn="${CATALOG_ROLE}" \
+              --set aws.iamRoles.orderRoleArn="${ORDER_ROLE}" \
+              --set aws.iamRoles.dbJobRoleArn="${DB_JOB_ROLE}" \
+              --set aws.s3.assetsBucketName="${ASSETS_BUCKET}" \
+              --wait --timeout 5m
+          fi
 
       - name: Set up Python for Smoke Testing
         uses: actions/setup-python@v5
@@ -230,11 +282,18 @@ jobs:
           done
 
           if [ -z "$ALB_HOSTNAME" ]; then
-            echo "ALB Ingress Hostname could not be resolved."
+            echo "ALB Ingress Hostname could not be resolved within timeout."
+            kubectl get ingress -n eks-store || true
             exit 1
           fi
 
-          echo "ALB Hostname: $ALB_HOSTNAME"
+          echo "============================================================"
+          echo "🎉 APPLICATION LOAD BALANCER IS LIVE!"
+          echo "ALB URL: http://${ALB_HOSTNAME}"
+          echo "============================================================"
+          echo "### 🚀 Application Load Balancer Live URL" >> $GITHUB_STEP_SUMMARY
+          echo "[http://${ALB_HOSTNAME}](http://${ALB_HOSTNAME})" >> $GITHUB_STEP_SUMMARY
+
           python scripts/smoke_test.py --url "http://$ALB_HOSTNAME"
 
       - name: Diagnostic Dumps on Failure

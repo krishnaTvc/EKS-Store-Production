@@ -1,0 +1,39 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: eks-store-bootstrap-db
+  namespace: eks-store
+  labels:
+    app.kubernetes.io/name: eks-store
+    app.kubernetes.io/component: db-bootstrap
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 2
+  activeDeadlineSeconds: 180
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: eks-store
+        app.kubernetes.io/component: db-bootstrap
+    spec:
+      serviceAccountName: db-job-sa
+      restartPolicy: OnFailure
+      containers:
+        - name: bootstrap-db
+          image: 407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-seed:latest
+          imagePullPolicy: Always
+          command: ["python", "scripts/bootstrap_databases.py"]
+          env:
+            - name: DATABASE_SECRET_DIR
+              value: "/mnt/secrets-store"
+          volumeMounts:
+            - name: secrets-store
+              mountPath: "/mnt/secrets-store"
+              readOnly: true
+      volumes:
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: eks-store-aws-secrets-db-job

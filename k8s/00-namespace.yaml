@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: eks-store
+  labels:
+    app.kubernetes.io/name: eks-store
+    environment: lab
