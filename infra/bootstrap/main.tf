@@ -22,52 +22,6 @@ provider "aws" {
 
 data "aws_caller_identity" "current" {}
 
-# Import blocks to adopt pre-existing AWS resources safely without conflict
-import {
-  to = aws_s3_bucket.tf_state
-  id = "${var.project_name}-tf-state-${var.environment}-${data.aws_caller_identity.current.account_id}"
-}
-
-import {
-  to = aws_s3_bucket_versioning.tf_state
-  id = "${var.project_name}-tf-state-${var.environment}-${data.aws_caller_identity.current.account_id}"
-}
-
-import {
-  to = aws_s3_bucket_server_side_encryption_configuration.tf_state
-  id = "${var.project_name}-tf-state-${var.environment}-${data.aws_caller_identity.current.account_id}"
-}
-
-import {
-  to = aws_s3_bucket_public_access_block.tf_state
-  id = "${var.project_name}-tf-state-${var.environment}-${data.aws_caller_identity.current.account_id}"
-}
-
-import {
-  to = aws_s3_bucket_policy.tf_state_tls_only
-  id = "${var.project_name}-tf-state-${var.environment}-${data.aws_caller_identity.current.account_id}"
-}
-
-import {
-  to = aws_dynamodb_table.tf_locks
-  id = "${var.project_name}-tf-locks-${var.environment}"
-}
-
-import {
-  to = aws_iam_policy.github_actions_ci
-  id = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/${var.project_name}-github-ci-policy-${var.environment}"
-}
-
-import {
-  to = aws_iam_role.github_actions
-  id = "${var.project_name}-github-actions-role-${var.environment}"
-}
-
-import {
-  to = aws_iam_role_policy_attachment.github_actions
-  id = "${var.project_name}-github-actions-role-${var.environment}/arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/${var.project_name}-github-ci-policy-${var.environment}"
-}
-
 # 1. Dedicated S3 Bucket for Terraform Remote State
 resource "aws_s3_bucket" "tf_state" {
   bucket        = "${var.project_name}-tf-state-${var.environment}-${data.aws_caller_identity.current.account_id}"

@@ -65,6 +65,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       image_tag: ${{ steps.vars.outputs.sha_short }}
+      ecr_registry: ${{ steps.login-ecr.outputs.registry }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -145,6 +146,10 @@ jobs:
         run: |
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}
 
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
       - name: Install Helm
         uses: azure/setup-helm@v4
         with:
@@ -155,14 +160,36 @@ jobs:
           TAG: ${{ needs.build-and-publish.outputs.image_tag }}
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
+          # Cleanup any previously failed release if present
+          STATUS=$(helm status eks-store -n eks-store -o json 2>/dev/null | jq -r '.info.status' || echo "")
+          if [ "$STATUS" = "failed" ] || [ "$STATUS" = "pending-install" ] || [ "$STATUS" = "pending-upgrade" ]; then
+            echo "Previous release is in '$STATUS' state; cleaning up before fresh install..."
+            helm uninstall eks-store -n eks-store || true
+            kubectl delete jobs -n eks-store --all --ignore-not-found=true || true
+          fi
+
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          CATALOG_ROLE="arn:aws:iam::${ACCOUNT_ID}:role/${PROJECT_NAME}-catalog-sa-role-${ENVIRONMENT}"
+          ORDER_ROLE="arn:aws:iam::${ACCOUNT_ID}:role/${PROJECT_NAME}-order-sa-role-${ENVIRONMENT}"
+          DB_JOB_ROLE="arn:aws:iam::${ACCOUNT_ID}:role/${PROJECT_NAME}-db-job-sa-role-${ENVIRONMENT}"
+          ASSETS_BUCKET="${PROJECT_NAME}-assets-${ENVIRONMENT}-${ACCOUNT_ID}"
+
           helm upgrade --install eks-store helm/eks-store \
             --namespace eks-store --create-namespace \
             --values helm/eks-store/values.yaml \
             --values helm/eks-store/values-${{ env.ENVIRONMENT }}.yaml \
-            --set images.frontend.tag=${{ env.TAG }} \
-            --set images.catalog.tag=${{ env.TAG }} \
-            --set images.orders.tag=${{ env.TAG }} \
-            --set images.seed.tag=${{ env.TAG }} \
+            --set images.frontend.repository="${REGISTRY}/${PROJECT_NAME}-frontend" \
+            --set images.catalog.repository="${REGISTRY}/${PROJECT_NAME}-catalog" \
+            --set images.orders.repository="${REGISTRY}/${PROJECT_NAME}-orders" \
+            --set images.seed.repository="${REGISTRY}/${PROJECT_NAME}-seed" \
+            --set images.frontend.tag="${TAG}" \
+            --set images.catalog.tag="${TAG}" \
+            --set images.orders.tag="${TAG}" \
+            --set images.seed.tag="${TAG}" \
+            --set aws.iamRoles.catalogRoleArn="${CATALOG_ROLE}" \
+            --set aws.iamRoles.orderRoleArn="${ORDER_ROLE}" \
+            --set aws.iamRoles.dbJobRoleArn="${DB_JOB_ROLE}" \
+            --set aws.s3.assetsBucketName="${ASSETS_BUCKET}" \
             --wait --timeout 10m
 
       - name: Set up Python for Smoke Testing

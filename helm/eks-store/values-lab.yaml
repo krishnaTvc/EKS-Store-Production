@@ -2,6 +2,24 @@
 global:
   environment: lab
 
+images:
+  frontend:
+    repository: 407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-frontend
+  catalog:
+    repository: 407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-catalog
+  orders:
+    repository: 407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-orders
+  seed:
+    repository: 407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-seed
+
+aws:
+  s3:
+    assetsBucketName: eks-store-assets-lab-407178840502
+  iamRoles:
+    catalogRoleArn: "arn:aws:iam::407178840502:role/eks-store-catalog-sa-role-lab"
+    orderRoleArn: "arn:aws:iam::407178840502:role/eks-store-order-sa-role-lab"
+    dbJobRoleArn: "arn:aws:iam::407178840502:role/eks-store-db-job-sa-role-lab"
+
 frontend:
   replicaCount: 1
   resources:

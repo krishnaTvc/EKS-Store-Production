@@ -27,32 +27,6 @@ provider "aws" {
 
 data "aws_caller_identity" "current" {}
 
-# Import blocks to adopt pre-created IAM roles and policies safely
-import {
-  to = aws_iam_role.cluster
-  id = "${var.project_name}-eks-cluster-role-${var.environment}"
-}
-
-import {
-  to = aws_iam_role.node
-  id = "${var.project_name}-eks-node-role-${var.environment}"
-}
-
-import {
-  to = aws_iam_policy.catalog_service
-  id = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/${var.project_name}-catalog-policy-${var.environment}"
-}
-
-import {
-  to = aws_iam_policy.order_service
-  id = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/${var.project_name}-order-policy-${var.environment}"
-}
-
-import {
-  to = aws_iam_policy.db_job
-  id = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/${var.project_name}-db-job-policy-${var.environment}"
-}
-
 # Auto-discover VPC, Subnets, SGs, and Secrets from previous stacks if not explicitly passed
 data "aws_vpc" "main" {
   count = var.vpc_id == "" ? 1 : 0

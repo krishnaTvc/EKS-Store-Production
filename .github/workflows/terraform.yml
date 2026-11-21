@@ -100,6 +100,11 @@ jobs:
           STACK_NAME="${{ inputs.stack }}"
           STACK_DIR="infra/${STACK_NAME}"
           echo "Processing stack: $STACK_DIR with action: ${{ inputs.action }}"
+
+          if [ "${{ inputs.action }}" != "destroy" ]; then
+            python .github/scripts/generate-imports.py --stack "$STACK_NAME" --env "${{ env.ENVIRONMENT }}" --region "${{ env.AWS_REGION }}" --account "$ACCOUNT_ID"
+          fi
+
           cd "$GITHUB_WORKSPACE/$STACK_DIR"
 
           if [ "$STACK_NAME" = "bootstrap" ]; then
@@ -129,6 +134,8 @@ jobs:
             echo "======================================================="
             echo "==> Running Terraform in infra/$STACK_NAME..."
             echo "======================================================="
+            cd "$GITHUB_WORKSPACE"
+            python .github/scripts/generate-imports.py --stack "$STACK_NAME" --env "${{ env.ENVIRONMENT }}" --region "${{ env.AWS_REGION }}" --account "$ACCOUNT_ID"
             cd "$GITHUB_WORKSPACE/infra/$STACK_NAME"
 
             if [ "$STACK_NAME" = "bootstrap" ]; then

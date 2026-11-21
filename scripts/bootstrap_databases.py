@@ -38,6 +38,13 @@ def get_connection_params():
 
 
 def get_app_credentials():
+    secret_dir_env = os.getenv("DB_SECRET_DIR") or os.getenv("DATABASE_SECRET_DIR")
+    if secret_dir_env and os.path.isdir(secret_dir_env):
+        s_path = Path(secret_dir_env)
+        cat_p = (s_path / "catalog_password").read_text().strip() if (s_path / "catalog_password").is_file() else None
+        ord_p = (s_path / "order_password").read_text().strip() if (s_path / "order_password").is_file() else None
+        if cat_p and ord_p:
+            return cat_p, ord_p
     catalog_pass = os.getenv("CATALOG_DB_PASSWORD", "catalog_pass")
     order_pass = os.getenv("ORDER_DB_PASSWORD", "order_pass")
     return catalog_pass, order_pass
