@@ -17,37 +17,20 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("bootstrap_databases")
 
 
-def get_connection_params():
-    """Resolves master connection parameters securely."""
-    # Check if secrets directory is mounted
-    secret_dir_env = os.getenv("DB_SECRET_DIR") or os.getenv("DATABASE_SECRET_DIR")
-    if secret_dir_env and os.path.isdir(secret_dir_env):
-        s_path = Path(secret_dir_env)
-        host = (s_path / "host").read_text().strip() if (s_path / "host").is_file() else None
-        port = (s_path / "port").read_text().strip() if (s_path / "port").is_file() else "5432"
-        user = (s_path / "master_username").read_text().strip() if (s_path / "master_username").is_file() else None
-        password = (s_path / "master_password").read_text().strip() if (s_path / "master_password").is_file() else None
-        if host and user and password:
-            return host, port, user, password
+def required_env(name):
+    value = os.environ.get(name)
+    if value is None or value == "":
+        raise ValueError(f"Required bootstrap variable is missing: {name}")
+    return value
 
-    host = (os.getenv("RDS_HOST") or os.getenv("DB_HOST", "localhost")).strip()
-    port = (os.getenv("RDS_PORT") or os.getenv("DB_PORT", "5432")).strip()
-    user = (os.getenv("RDS_MASTER_USER") or os.getenv("DB_MASTER_USER", "postgres")).strip()
-    password = (os.getenv("RDS_MASTER_PASSWORD") or os.getenv("DB_MASTER_PASSWORD", "postgrespassword")).strip()
-    return host, port, user, password
+
+def get_connection_params():
+    return (required_env("RDS_HOST"), required_env("RDS_PORT"),
+            required_env("RDS_MASTER_USER"), required_env("RDS_MASTER_PASSWORD"))
 
 
 def get_app_credentials():
-    secret_dir_env = os.getenv("DB_SECRET_DIR") or os.getenv("DATABASE_SECRET_DIR")
-    if secret_dir_env and os.path.isdir(secret_dir_env):
-        s_path = Path(secret_dir_env)
-        cat_p = (s_path / "catalog_password").read_text().strip() if (s_path / "catalog_password").is_file() else None
-        ord_p = (s_path / "order_password").read_text().strip() if (s_path / "order_password").is_file() else None
-        if cat_p and ord_p:
-            return cat_p, ord_p
-    catalog_pass = (os.getenv("CATALOG_DB_PASSWORD") or "catalog_pass").strip()
-    order_pass = (os.getenv("ORDER_DB_PASSWORD") or "order_pass").strip()
-    return catalog_pass, order_pass
+    return required_env("CATALOG_DB_PASSWORD"), required_env("ORDER_DB_PASSWORD")
 
 
 def bootstrap():
@@ -56,7 +39,7 @@ def bootstrap():
 
     logger.info(f"Connecting to PostgreSQL host {host}:{port} as user '{master_user}'...")
 
-    sslmode = os.getenv("PGSSLMODE", "prefer")
+    sslmode = os.getenv("PGSSLMODE", "verify-full")
     sslrootcert = os.getenv("PGSSLROOTCERT")
 
     conn_kwargs = {
@@ -66,6 +49,7 @@ def bootstrap():
         "password": master_pass,
         "dbname": "postgres",
         "autocommit": True,
+        "connect_timeout": 15,
         "sslmode": sslmode,
     }
     if sslrootcert and os.path.isfile(sslrootcert):
@@ -81,10 +65,10 @@ def bootstrap():
                     cur.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (username,))
                     if not cur.fetchone():
                         logger.info(f"Creating role '{username}'...")
-                        cur.execute(sql.SQL("CREATE ROLE {} WITH LOGIN PASSWORD %s").format(sql.Identifier(username)), (password,))
+                        cur.execute(sql.SQL("CREATE ROLE {} WITH LOGIN PASSWORD {}").format(sql.Identifier(username), sql.Literal(password)))
                     else:
                         logger.info(f"Role '{username}' already exists. Updating password...")
-                        cur.execute(sql.SQL("ALTER ROLE {} WITH PASSWORD %s").format(sql.Identifier(username)), (password,))
+                        cur.execute(sql.SQL("ALTER ROLE {} WITH PASSWORD {}").format(sql.Identifier(username), sql.Literal(password)))
 
                 # 2. Create Logical Databases if they do not exist
                 logger.info("Ensuring logical databases exist...")

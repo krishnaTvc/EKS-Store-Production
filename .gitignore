@@ -48,3 +48,8 @@ terraform.rc
 .DS_Store
 Thumbs.db
 
+
+.rendered/
+.venv/
+*diagnostics.txt
+generated_imports.tf

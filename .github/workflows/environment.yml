@@ -1,144 +1,39 @@
-name: Environment Lifecycle & Cost Control
-
+name: Remove application (keep AWS infrastructure and data)
 on:
   workflow_dispatch:
     inputs:
-      action:
-        description: "Lifecycle action to perform"
-        required: true
-        type: choice
-        options:
-          - pause
-          - resume
-          - recreate
-          - destroy-disposable
       environment:
-        description: "Target environment"
-        required: true
-        default: "lab"
         type: choice
-        options:
-          - lab
-          - production
+        options: [lab, production]
+        default: lab
       confirmation:
-        description: "Type 'CONFIRM' to execute"
+        description: Type REMOVE-APP
         required: true
-        default: ""
-
 permissions:
-  id-token: write
   contents: read
-
+concurrency:
+  group: eks-store-operations
+  cancel-in-progress: false
 env:
   AWS_REGION: eu-north-1
-  PROJECT_NAME: eks-store
   ENVIRONMENT: ${{ inputs.environment }}
-
 jobs:
-  manage-environment:
-    name: Execute ${{ inputs.action }} on ${{ inputs.environment }}
+  remove:
     runs-on: ubuntu-latest
     steps:
-      - name: Validate Confirmation
-        run: |
-          if [ "${{ inputs.confirmation }}" != "CONFIRM" ]; then
-            echo "Operation aborted: Confirmation input did not match 'CONFIRM'."
-            exit 1
-          fi
-
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          role-to-assume: ${{ secrets.AWS_GITHUB_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.9.8"
-
-      # Action: Pause (Saves costs: scales nodes to 0, removes ALB)
-      - name: Execute Pause
-        if: ${{ inputs.action == 'pause' }}
+      - run: bash scripts/install-kubectl.sh
+      - env:
+          CONFIRMATION: ${{ inputs.confirmation }}
         run: |
-          echo "Connecting to EKS..."
-          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }} || true
-          
-          echo "Removing Helm release to delete ALB Ingress and target groups..."
-          helm uninstall eks-store -n eks-store || true
-          
-          echo "Scaling EKS Node Group to 0 nodes..."
-          aws eks update-nodegroup-config \
-            --region ${{ env.AWS_REGION }} \
-            --cluster-name ${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }} \
-            --nodegroup-name ${{ env.PROJECT_NAME }}-nodes-${{ env.ENVIRONMENT }} \
-            --scaling-config minSize=0,maxSize=1,desiredSize=0 || true
-            
-          echo "Stopping RDS instance to cap storage/compute charges..."
-          aws rds stop-db-instance \
-            --region ${{ env.AWS_REGION }} \
-            --db-instance-identifier ${{ env.PROJECT_NAME }}-rds-${{ env.ENVIRONMENT }} || true
-          echo "Environment successfully paused."
-
-      # Action: Resume (Starts RDS, restores nodes, reinstalls app)
-      - name: Execute Resume
-        if: ${{ inputs.action == 'resume' }}
-        run: |
-          echo "Starting RDS instance..."
-          aws rds start-db-instance \
-            --region ${{ env.AWS_REGION }} \
-            --db-instance-identifier ${{ env.PROJECT_NAME }}-rds-${{ env.ENVIRONMENT }} || true
-            
-          echo "Waiting for RDS instance to become available..."
-          aws rds wait db-instance-available \
-            --region ${{ env.AWS_REGION }} \
-            --db-instance-identifier ${{ env.PROJECT_NAME }}-rds-${{ env.ENVIRONMENT }}
-            
-          echo "Scaling EKS Node Group back to 2 nodes..."
-          aws eks update-nodegroup-config \
-            --region ${{ env.AWS_REGION }} \
-            --cluster-name ${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }} \
-            --nodegroup-name ${{ env.PROJECT_NAME }}-nodes-${{ env.ENVIRONMENT }} \
-            --scaling-config minSize=1,maxSize=3,desiredSize=2
-            
-          echo "Updating Kubeconfig..."
-          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}
-          
-          echo "Re-applying Helm Chart..."
-          helm upgrade --install eks-store helm/eks-store \
-            --namespace eks-store --create-namespace \
-            --values helm/eks-store/values.yaml \
-            --values helm/eks-store/values-${{ env.ENVIRONMENT }}.yaml \
-            --wait --timeout 10m
-          echo "Environment successfully resumed."
-
-      # Action: Recreate (Demonstrates disposable cluster model; persistent order survives!)
-      - name: Execute Recreate Platform
-        if: ${{ inputs.action == 'recreate' }}
-        run: |
-          echo "Destroying disposable platform stack..."
-          cd infra/platform
-          terraform init
-          terraform destroy -auto-approve
-          
-          echo "Recreating platform stack from scratch..."
-          terraform apply -auto-approve
-          
-          echo "Updating Kubeconfig and deploying Addons..."
-          cd ../addons
-          terraform init
-          terraform apply -auto-approve
-          
-          echo "Deploying application Helm chart against existing RDS..."
-          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}
-          helm upgrade --install eks-store ../../helm/eks-store \
-            --namespace eks-store --create-namespace \
-            --values ../../helm/eks-store/values.yaml \
-            --values ../../helm/eks-store/values-${{ env.ENVIRONMENT }}.yaml \
-            --wait --timeout 10m
-          echo "Cluster recreation complete! Run smoke tests to verify order persistence."
+          set -euo pipefail
+          test "$CONFIRMATION" = REMOVE-APP
+          aws eks update-kubeconfig --region "$AWS_REGION" --name "eks-store-${ENVIRONMENT}"
+          kubectl delete ingress eks-store-ingress -n eks-store --ignore-not-found --wait=true
+          kubectl delete deployment frontend catalog-service order-service -n eks-store --ignore-not-found
+          echo 'RDS, EKS, S3, ECR and NAT still exist and may incur charges.'

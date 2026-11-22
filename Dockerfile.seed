@@ -29,6 +29,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # Install runtime PostgreSQL client library
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
     libpq5 \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd -g 10001 appgroup \
@@ -42,6 +44,11 @@ COPY --chown=appuser:appgroup config /app/config
 COPY --chown=appuser:appgroup data /app/data
 COPY --chown=appuser:appgroup scripts/import_catalog.py /app/scripts/import_catalog.py
 COPY --chown=appuser:appgroup scripts/bootstrap_databases.py /app/scripts/bootstrap_databases.py
+
+RUN mkdir -p /app/certs && curl --fail --silent --show-error --location \
+    https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem \
+    -o /app/certs/rds-ca.pem
+ENV PGSSLROOTCERT=/app/certs/rds-ca.pem
 
 USER appuser
 

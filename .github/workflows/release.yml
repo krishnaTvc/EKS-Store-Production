@@ -1,599 +1,127 @@
 name: Deploy Production EKS Store
-
 on:
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - 'frontend/**'
       - 'catalog-service/**'
       - 'order-service/**'
-      - 'helm/**'
       - 'k8s/**'
-      - 'data/**'
-      - 'config/**'
       - 'scripts/**'
+      - 'config/**'
+      - 'data/**'
+      - 'assets/**'
+      - 'Dockerfile.seed'
+      - 'requirements.txt'
       - '.github/**'
   workflow_dispatch:
     inputs:
       environment:
-        description: "Target deployment environment profile"
-        required: true
-        default: "lab"
         type: choice
-        options:
-          - lab
-          - production
-      deployment_method:
-        description: "Deployment tool to use"
+        options: [lab, production]
+        default: lab
         required: true
-        default: "kubectl"
-        type: choice
-        options:
-          - kubectl
-          - helm
-
-concurrency:
-  group: deployment-${{ github.ref }}
-  cancel-in-progress: false
-
 permissions:
-  id-token: write
   contents: read
-
+concurrency:
+  group: eks-store-operations
+  cancel-in-progress: false
 env:
   AWS_REGION: eu-north-1
-  PROJECT_NAME: eks-store
   ENVIRONMENT: ${{ inputs.environment || 'lab' }}
-  DEPLOYMENT_METHOD: ${{ inputs.deployment_method || 'kubectl' }}
-
 jobs:
   validate:
-    name: Code & Test Validation
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: integration-master
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 12
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-
-      - name: Install Linting & Unit Test Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install flake8 pytest httpx
-
-      - name: Lint Microservices
-        run: |
-          flake8 catalog-service/catalog_app order-service/order_app --count --select=E9,F63,F7,F82 --show-source --statistics
-
-      - name: Run Catalog Service Tests
-        run: |
-          cd catalog-service
-          pytest tests/ -v -m "not integration" || true
-
-      - name: Run Order Service Tests
-        run: |
-          cd order-service
-          pytest tests/ -v -m "not integration" || true
-
-  build-and-publish:
-    name: Build & Publish ECR Images
+          python-version: '3.11'
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - run: python -m pytest -q
+      - name: PostgreSQL integration gate
+        env:
+          ALLOW_DISPOSABLE_DB_TEST: 'yes'
+        run: python scripts/test_postgres_integration.py
+  build:
     needs: validate
     runs-on: ubuntu-latest
     outputs:
-      image_tag: ${{ steps.vars.outputs.tag }}
+      tag: ${{ steps.tag.outputs.value }}
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Compute Image Tag
-        id: vars
-        run: echo "tag=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: actions/checkout@v4
+      - id: tag
+        run: echo "value=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login to Amazon ECR
-        id: login-ecr
+      - id: registry
         uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and Push Microservice Images
+      - name: Build and push SHA-tagged release images
         env:
-          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          TAG: ${{ steps.vars.outputs.tag }}
+          REGISTRY: ${{ steps.registry.outputs.registry }}
+          TAG: ${{ steps.tag.outputs.value }}
         run: |
-          echo "Building & Pushing container images with tag: ${TAG}"
-
-          docker build -t ${REGISTRY}/${PROJECT_NAME}-frontend:${TAG} -t ${REGISTRY}/${PROJECT_NAME}-frontend:latest ./frontend
-          docker push ${REGISTRY}/${PROJECT_NAME}-frontend:${TAG}
-          docker push ${REGISTRY}/${PROJECT_NAME}-frontend:latest
-
-          docker build -t ${REGISTRY}/${PROJECT_NAME}-catalog:${TAG} -t ${REGISTRY}/${PROJECT_NAME}-catalog:latest ./catalog-service
-          docker push ${REGISTRY}/${PROJECT_NAME}-catalog:${TAG}
-          docker push ${REGISTRY}/${PROJECT_NAME}-catalog:latest
-
-          docker build -t ${REGISTRY}/${PROJECT_NAME}-orders:${TAG} -t ${REGISTRY}/${PROJECT_NAME}-orders:latest ./order-service
-          docker push ${REGISTRY}/${PROJECT_NAME}-orders:${TAG}
-          docker push ${REGISTRY}/${PROJECT_NAME}-orders:latest
-
-          docker build -t ${REGISTRY}/${PROJECT_NAME}-seed:${TAG} -t ${REGISTRY}/${PROJECT_NAME}-seed:latest -f Dockerfile.seed .
-          docker push ${REGISTRY}/${PROJECT_NAME}-seed:${TAG}
-          docker push ${REGISTRY}/${PROJECT_NAME}-seed:latest
-
+          set -euo pipefail
+          docker build -t "$REGISTRY/eks-store-frontend:$TAG" frontend
+          docker build -t "$REGISTRY/eks-store-catalog:$TAG" catalog-service
+          docker build -t "$REGISTRY/eks-store-orders:$TAG" order-service
+          docker build -f Dockerfile.seed -t "$REGISTRY/eks-store-seed:$TAG" .
+          for name in frontend catalog orders seed; do docker push "$REGISTRY/eks-store-$name:$TAG"; done
   deploy:
-    name: Deploy Application & Smoke Test
-    needs: build-and-publish
+    needs: build
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install boto3 pyyaml httpx
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
-
-      - name: Update Kubeconfig
-        run: |
-          echo "Resolving EKS Cluster in region ${{ env.AWS_REGION }}..."
-          TARGET_CLUSTER="${PROJECT_NAME}-${ENVIRONMENT}"
-          if ! aws eks describe-cluster --region "$AWS_REGION" --name "$TARGET_CLUSTER" >/dev/null 2>&1; then
-            if aws eks describe-cluster --region "$AWS_REGION" --name "${PROJECT_NAME}-cluster-${ENVIRONMENT}" >/dev/null 2>&1; then
-              TARGET_CLUSTER="${PROJECT_NAME}-cluster-${ENVIRONMENT}"
-            else
-              DISCOVERED=$(aws eks list-clusters --region "$AWS_REGION" --query "clusters[?contains(@, '${PROJECT_NAME}')]" --output text | awk '{print $1}')
-              if [ -n "$DISCOVERED" ] && [ "$DISCOVERED" != "None" ]; then
-                TARGET_CLUSTER="$DISCOVERED"
-              else
-                echo "::error::No EKS cluster found for project '${PROJECT_NAME}' in region '${AWS_REGION}'!"
-                echo "Available clusters in region:"
-                aws eks list-clusters --region "$AWS_REGION" --output table || true
-                echo "Please run the 'Terraform Infrastructure Manager' workflow (stack: all) to provision the EKS cluster."
-                exit 1
-              fi
-            fi
-          fi
-          echo "Connecting to EKS Cluster: $TARGET_CLUSTER"
-          aws eks update-kubeconfig --region "$AWS_REGION" --name "$TARGET_CLUSTER"
-          echo "TARGET_CLUSTER=$TARGET_CLUSTER" >> $GITHUB_ENV
-
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Install Helm
-        uses: azure/setup-helm@v4
-        with:
-          version: "v3.15.0"
-
-      - name: Verify Prerequisites and AWS Secrets
-        run: |
-          echo "Checking AWS Secrets Manager prerequisites..."
-          SECRET_NAME="${PROJECT_NAME}/${ENVIRONMENT}/rds/master"
-          if ! aws secretsmanager describe-secret --secret-id "$SECRET_NAME" >/dev/null 2>&1; then
-            echo "::error::AWS Secret '$SECRET_NAME' was not found in AWS Secrets Manager!"
-            echo "====================================================================================="
-            echo "CRITICAL: The database stack has not been provisioned in AWS yet."
-            echo "Please run the 'Terraform Infrastructure Manager' workflow first:"
-            echo "  - Stack: all (or data)"
-            echo "  - Action: apply"
-            echo "This will create the RDS instance, S3 buckets, and Secrets Manager secrets."
-            echo "====================================================================================="
-            exit 1
-          fi
-          echo "AWS Secret '$SECRET_NAME' verified successfully."
-
-      - name: Ensure CSIDriver TokenRequests for AWS IRSA
-        run: |
-          echo "Checking CSIDriver secrets-store.csi.k8s.io spec.tokenRequests..."
-          TOKEN_REQ=$(kubectl get csidriver secrets-store.csi.k8s.io -o jsonpath='{.spec.tokenRequests}' 2>/dev/null || echo "")
-          if [[ "$TOKEN_REQ" != *"sts.amazonaws.com"* ]]; then
-            echo "Configuring tokenRequests on CSIDriver for AWS STS IRSA..."
-            kubectl delete csidriver secrets-store.csi.k8s.io --ignore-not-found=true
-            echo '{"apiVersion":"storage.k8s.io/v1","kind":"CSIDriver","metadata":{"name":"secrets-store.csi.k8s.io"},"spec":{"attachRequired":false,"podInfoOnMount":true,"volumeLifecycleModes":["Ephemeral"],"tokenRequests":[{"audience":"sts.amazonaws.com"}]}}' | kubectl apply -f -
-            echo "Restarting Secrets Store CSI driver daemonset..."
-            kubectl rollout restart daemonset/secrets-store-csi-driver -n kube-system || true
-            kubectl rollout status daemonset/secrets-store-csi-driver -n kube-system --timeout=60s || true
-          else
-            echo "CSIDriver tokenRequests is already properly configured with sts.amazonaws.com."
-          fi
-
-          echo "Granting TokenRequest permissions to secrets-store-csi-driver..."
-          echo '{"apiVersion":"rbac.authorization.k8s.io/v1","kind":"ClusterRole","metadata":{"name":"secrets-store-csi-driver-token-request"},"rules":[{"apiGroups":[""],"resources":["serviceaccounts/token"],"verbs":["create"]}]}' | kubectl apply -f -
-          echo '{"apiVersion":"rbac.authorization.k8s.io/v1","kind":"ClusterRoleBinding","metadata":{"name":"secrets-store-csi-driver-token-request"},"roleRef":{"apiGroup":"rbac.authorization.k8s.io","kind":"ClusterRole","name":"secrets-store-csi-driver-token-request"},"subjects":[{"kind":"ServiceAccount","name":"secrets-store-csi-driver","namespace":"kube-system"}]}' | kubectl apply -f -
-
-      - name: Ensure AWS Load Balancer Controller and Subnets
-        run: |
-          echo "Resolving Cluster VPC ID..."
-          VPC_ID=$(aws eks describe-cluster --name "$TARGET_CLUSTER" --region "$AWS_REGION" --query "cluster.resourcesVpcConfig.vpcId" --output text)
-          echo "Cluster VPC ID: $VPC_ID"
-          echo "VPC_ID=$VPC_ID" >> $GITHUB_ENV
-
-          echo "Discovering Public Subnets in VPC $VPC_ID..."
-          PUBLIC_SUBNETS=$(aws ec2 describe-subnets --region "$AWS_REGION" \
-            --filters "Name=vpc-id,Values=$VPC_ID" "Name=map-public-ip-on-launch,Values=true" \
-            --query "Subnets[*].SubnetId" --output text | tr '\t' ',')
-
-          if [ -z "$PUBLIC_SUBNETS" ] || [ "$PUBLIC_SUBNETS" = "None" ]; then
-            echo "Searching by Name tag for public subnets..."
-            PUBLIC_SUBNETS=$(aws ec2 describe-subnets --region "$AWS_REGION" \
-              --filters "Name=vpc-id,Values=$VPC_ID" "Name=tag:Name,Values=*public*" \
-              --query "Subnets[*].SubnetId" --output text | tr '\t' ',')
-          fi
-
-          echo "Discovered Public Subnets: $PUBLIC_SUBNETS"
-
-          if [ -n "$PUBLIC_SUBNETS" ]; then
-            SUBNET_LIST=$(echo "$PUBLIC_SUBNETS" | tr ',' ' ')
-            echo "Ensuring required kubernetes.io/role/elb=1 tag on subnets: $SUBNET_LIST"
-            aws ec2 create-tags --region "$AWS_REGION" --resources $SUBNET_LIST --tags Key=kubernetes.io/role/elb,Value=1 || true
-          fi
-          echo "PUBLIC_SUBNETS=$PUBLIC_SUBNETS" >> $GITHUB_ENV
-
-          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          ALB_ROLE_NAME="${PROJECT_NAME}-alb-controller-role-${ENVIRONMENT}"
-          ALB_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${ALB_ROLE_NAME}"
-
-          echo "Ensuring full IAM permissions for AWS Load Balancer Controller role..."
-          aws iam put-role-policy \
-            --role-name "$ALB_ROLE_NAME" \
-            --policy-name "ALBControllerAddTagsFix" \
-            --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["elasticloadbalancing:AddTags","elasticloadbalancing:RemoveTags"],"Resource":"*"}]}' || true
-
-          echo "Ensuring IAM permissions for database jobs and microservices..."
-          DB_JOB_ROLE_NAME="${PROJECT_NAME}-db-job-sa-role-${ENVIRONMENT}"
-          CATALOG_ROLE_NAME="${PROJECT_NAME}-catalog-sa-role-${ENVIRONMENT}"
-          ORDER_ROLE_NAME="${PROJECT_NAME}-order-sa-role-${ENVIRONMENT}"
-          
-          for ROLE in "$DB_JOB_ROLE_NAME" "$CATALOG_ROLE_NAME" "$ORDER_ROLE_NAME"; do
-            echo "Granting Secrets Manager and KMS decrypt permissions to $ROLE..."
-            aws iam put-role-policy \
-              --role-name "$ROLE" \
-              --policy-name "MicroserviceSecretsManagerAccess" \
-              --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["secretsmanager:GetSecretValue","secretsmanager:DescribeSecret","kms:Decrypt"],"Resource":"*"}]}' || true
-          done
-
-          echo "Ensuring RDS security group allows port 5432 from VPC..."
-          VPC_CIDR=$(aws ec2 describe-vpcs --region "$AWS_REGION" --vpc-ids "$VPC_ID" --query "Vpcs[0].CidrBlock" --output text 2>/dev/null || echo "10.0.0.0/16")
-          RDS_SG_ID=$(aws ec2 describe-security-groups --region "$AWS_REGION" --filters "Name=vpc-id,Values=$VPC_ID" "Name=group-name,Values=*rds-sg*" --query "SecurityGroups[0].GroupId" --output text 2>/dev/null || echo "")
-          if [ -n "$RDS_SG_ID" ] && [ "$RDS_SG_ID" != "None" ]; then
-            echo "Authorizing ingress on RDS Security Group $RDS_SG_ID for VPC CIDR $VPC_CIDR on port 5432..."
-            aws ec2 authorize-security-group-ingress --region "$AWS_REGION" --group-id "$RDS_SG_ID" --protocol tcp --port 5432 --cidr "$VPC_CIDR" || true
-          fi
-
-          echo "Ensuring database connection URLs use sslmode=require..."
-          for S_NAME in "${PROJECT_NAME}/${ENVIRONMENT}/catalog-db" "${PROJECT_NAME}/${ENVIRONMENT}/order-db"; do
-            SEC_VAL=$(aws secretsmanager get-secret-value --region "$AWS_REGION" --secret-id "$S_NAME" --query "SecretString" --output text 2>/dev/null || echo "")
-            if echo "$SEC_VAL" | grep -q "sslmode=verify-full"; then
-              UPDATED_SEC=$(echo "$SEC_VAL" | sed 's/sslmode=verify-full/sslmode=require/g')
-              aws secretsmanager put-secret-value --region "$AWS_REGION" --secret-id "$S_NAME" --secret-string "$UPDATED_SEC" || true
-              echo "Updated $S_NAME to sslmode=require"
-            fi
-          done
-
-          echo "Checking AWS Load Balancer Controller in kube-system..."
-          if ! kubectl get deployment -n kube-system aws-load-balancer-controller >/dev/null 2>&1; then
-            echo "AWS Load Balancer Controller is NOT installed in kube-system. Installing via Helm..."
-            helm repo add eks https://aws.github.io/eks-charts --force-update
-            helm repo update
-            
-            helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
-              --namespace kube-system \
-              --set clusterName="$TARGET_CLUSTER" \
-              --set serviceAccount.create=true \
-              --set serviceAccount.name=aws-load-balancer-controller \
-              --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="$ALB_ROLE_ARN" \
-              --set region="$AWS_REGION" \
-              --set vpcId="$VPC_ID"
-          else
-            echo "Restarting AWS Load Balancer Controller to refresh credentials and permissions..."
-            kubectl rollout restart deployment/aws-load-balancer-controller -n kube-system || true
-          fi
-
-          echo "Awaiting AWS Load Balancer Controller readiness..."
-          kubectl rollout status deployment/aws-load-balancer-controller -n kube-system --timeout=120s || true
-
-      - name: Deploy Workloads
+      - run: bash scripts/install-kubectl.sh
+      - name: Bootstrap, migrate, seed and rollout
         env:
-          TAG: ${{ needs.build-and-publish.outputs.image_tag }}
-          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ needs.build.outputs.tag }}
+        run: bash scripts/deploy.sh
+      - name: Upload catalog images
         run: |
-          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          CATALOG_ROLE="arn:aws:iam::${ACCOUNT_ID}:role/${PROJECT_NAME}-catalog-sa-role-${ENVIRONMENT}"
-          ORDER_ROLE="arn:aws:iam::${ACCOUNT_ID}:role/${PROJECT_NAME}-order-sa-role-${ENVIRONMENT}"
-          DB_JOB_ROLE="arn:aws:iam::${ACCOUNT_ID}:role/${PROJECT_NAME}-db-job-sa-role-${ENVIRONMENT}"
-          ASSETS_BUCKET="${PROJECT_NAME}-assets-${ENVIRONMENT}-${ACCOUNT_ID}"
-
-          echo "Ensuring namespace 'eks-store' exists..."
-          kubectl create namespace eks-store --dry-run=client -o yaml | kubectl apply -f -
-
-          echo "=== Fetching database credentials and creating direct Kubernetes Secrets ==="
-          python3 -m pip install boto3 --quiet
-          python3 - << 'PYEOF'
-          import json, os, subprocess, boto3
-
-          region = os.environ.get("AWS_REGION", "eu-north-1")
-          sm = boto3.client("secretsmanager", region_name=region)
-          proj = os.environ["PROJECT_NAME"]
-          env = os.environ["ENVIRONMENT"]
-
-          master_raw = sm.get_secret_value(SecretId=f"{proj}/{env}/rds/master")["SecretString"]
-          cat_raw = sm.get_secret_value(SecretId=f"{proj}/{env}/catalog-db")["SecretString"]
-          ord_raw = sm.get_secret_value(SecretId=f"{proj}/{env}/order-db")["SecretString"]
-
-          master = json.loads(master_raw)
-          catalog = json.loads(cat_raw)
-          order = json.loads(ord_raw)
-
-          host = str(master.get("host") or master.get("endpoint")).strip()
-          port = str(master.get("port", "5432")).strip()
-          master_user = str(master.get("master_username") or master.get("username", "postgres")).strip()
-          master_pass = str(master.get("master_password") or master.get("password")).strip()
-
-          cat_user = str(catalog.get("username", "catalog_user")).strip()
-          cat_pass = str(catalog.get("password") or catalog.get("catalog_password")).strip()
-          cat_url = str(catalog.get("DATABASE_URL", "")).strip()
-          if not cat_url:
-              from urllib.parse import quote_plus
-              cat_url = f"postgresql+psycopg://{cat_user}:{quote_plus(cat_pass)}@{host}:{port}/catalog?sslmode=require"
-          elif "sslmode=verify-full" in cat_url:
-              cat_url = cat_url.replace("sslmode=verify-full", "sslmode=require")
-
-          ord_user = str(order.get("username", "order_user")).strip()
-          ord_pass = str(order.get("password") or order.get("order_password")).strip()
-          ord_url = str(order.get("DATABASE_URL", "")).strip()
-          if not ord_url:
-              from urllib.parse import quote_plus
-              ord_url = f"postgresql+psycopg://{ord_user}:{quote_plus(ord_pass)}@{host}:{port}/orders?sslmode=require"
-          elif "sslmode=verify-full" in ord_url:
-              ord_url = ord_url.replace("sslmode=verify-full", "sslmode=require")
-
-          # eks-store-db-secret
-          sec_manifest = {
-              "apiVersion": "v1",
-              "kind": "Secret",
-              "metadata": {
-                  "name": "eks-store-db-secret",
-                  "namespace": "eks-store"
-              },
-              "type": "Opaque",
-              "stringData": {
-                  "RDS_HOST": host,
-                  "RDS_PORT": port,
-                  "RDS_MASTER_USER": master_user,
-                  "RDS_MASTER_PASSWORD": master_pass,
-                  "CATALOG_DB_PASSWORD": cat_pass,
-                  "ORDER_DB_PASSWORD": ord_pass,
-                  "CATALOG_DATABASE_URL": cat_url,
-                  "ORDER_DATABASE_URL": ord_url,
-                  "DATABASE_URL": cat_url,
-              }
-          }
-          subprocess.run(["kubectl", "apply", "-f", "-"], input=json.dumps(sec_manifest), text=True, check=True)
-
-          # catalog-db-sync-secret
-          cat_sync = {
-              "apiVersion": "v1",
-              "kind": "Secret",
-              "metadata": {
-                  "name": "catalog-db-sync-secret",
-                  "namespace": "eks-store"
-              },
-              "type": "Opaque",
-              "stringData": {
-                  "DATABASE_URL": cat_url
-              }
-          }
-          subprocess.run(["kubectl", "apply", "-f", "-"], input=json.dumps(cat_sync), text=True, check=True)
-
-          # order-db-sync-secret
-          ord_sync = {
-              "apiVersion": "v1",
-              "kind": "Secret",
-              "metadata": {
-                  "name": "order-db-sync-secret",
-                  "namespace": "eks-store"
-              },
-              "type": "Opaque",
-              "stringData": {
-                  "DATABASE_URL": ord_url
-              }
-          }
-          subprocess.run(["kubectl", "apply", "-f", "-"], input=json.dumps(ord_sync), text=True, check=True)
-          print("Direct Kubernetes secrets successfully created via stringData!")
-          PYEOF
-
-          if [ "${DEPLOYMENT_METHOD}" = "kubectl" ]; then
-            echo "=== Deploying using pure Kubernetes YAML manifests ==="
-            RUN_ID=$(date +%s)
-            kubectl apply -f k8s/00-namespace.yaml
-            kubectl apply -f k8s/01-serviceaccounts.yaml
-            kubectl apply -f k8s/02-configmap.yaml
-            kubectl apply -f k8s/03-secretproviderclass.yaml
-            
-            # Inject subnets into Ingress
-            if [ -n "$PUBLIC_SUBNETS" ]; then
-              echo "Annotating Ingress with explicit public subnets: $PUBLIC_SUBNETS"
-              sed -i "s|alb.ingress.kubernetes.io/scheme: internet-facing|alb.ingress.kubernetes.io/scheme: internet-facing\n    alb.ingress.kubernetes.io/subnets: \"${PUBLIC_SUBNETS}\"|g" k8s/07-ingress.yaml
-            fi
-            kubectl apply -f k8s/07-ingress.yaml
-
-            echo "=== Executing Database Bootstrap Job ==="
-            sed -i "s|name: eks-store-bootstrap-db|name: eks-store-bootstrap-db-${RUN_ID}|g" k8s/jobs/db-bootstrap.yaml
-            sed -i "s|407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-seed:latest|${REGISTRY}/${PROJECT_NAME}-seed:${TAG}|g" k8s/jobs/db-bootstrap.yaml
-            kubectl apply -f k8s/jobs/db-bootstrap.yaml
-
-            echo "Awaiting completion of bootstrap job eks-store-bootstrap-db-${RUN_ID}..."
-            if ! kubectl wait --for=condition=complete job/eks-store-bootstrap-db-${RUN_ID} -n eks-store --timeout=120s; then
-              echo "❌ Database Bootstrap Job failed or timed out!"
-              kubectl describe job eks-store-bootstrap-db-${RUN_ID} -n eks-store || true
-              kubectl logs -n eks-store job/eks-store-bootstrap-db-${RUN_ID} --all-containers --tail=200 || true
-              exit 1
-            fi
-            echo "✅ Database Bootstrap complete! Logs:"
-            kubectl logs -n eks-store job/eks-store-bootstrap-db-${RUN_ID} --all-containers --tail=50 || true
-
-            echo "=== Executing Database Migration Jobs ==="
-            sed -i "s|name: eks-store-catalog-migration|name: eks-store-catalog-migration-${RUN_ID}|g" k8s/jobs/catalog-migration.yaml
-            sed -i "s|407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-catalog:latest|${REGISTRY}/${PROJECT_NAME}-catalog:${TAG}|g" k8s/jobs/catalog-migration.yaml
-            sed -i "s|name: eks-store-orders-migration|name: eks-store-orders-migration-${RUN_ID}|g" k8s/jobs/orders-migration.yaml
-            sed -i "s|407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-orders:latest|${REGISTRY}/${PROJECT_NAME}-orders:${TAG}|g" k8s/jobs/orders-migration.yaml
-            kubectl apply -f k8s/jobs/catalog-migration.yaml
-            kubectl apply -f k8s/jobs/orders-migration.yaml
-
-            echo "Awaiting completion of migration jobs..."
-            if ! kubectl wait --for=condition=complete job/eks-store-catalog-migration-${RUN_ID} job/eks-store-orders-migration-${RUN_ID} -n eks-store --timeout=120s; then
-              echo "❌ Database Migrations failed or timed out!"
-              kubectl describe job eks-store-catalog-migration-${RUN_ID} -n eks-store || true
-              kubectl logs -n eks-store job/eks-store-catalog-migration-${RUN_ID} --all-containers --tail=100 || true
-              kubectl describe job eks-store-orders-migration-${RUN_ID} -n eks-store || true
-              kubectl logs -n eks-store job/eks-store-orders-migration-${RUN_ID} --all-containers --tail=100 || true
-              exit 1
-            fi
-            echo "✅ Database Migrations complete!"
-
-            echo "=== Executing Catalog Seed Job ==="
-            sed -i "s|name: eks-store-catalog-seed|name: eks-store-catalog-seed-${RUN_ID}|g" k8s/jobs/catalog-seed.yaml
-            sed -i "s|407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-seed:latest|${REGISTRY}/${PROJECT_NAME}-seed:${TAG}|g" k8s/jobs/catalog-seed.yaml
-            kubectl apply -f k8s/jobs/catalog-seed.yaml
-
-            echo "Awaiting completion of catalog seed job..."
-            if ! kubectl wait --for=condition=complete job/eks-store-catalog-seed-${RUN_ID} -n eks-store --timeout=120s; then
-              echo "❌ Catalog Seed failed or timed out!"
-              kubectl describe job eks-store-catalog-seed-${RUN_ID} -n eks-store || true
-              kubectl logs -n eks-store job/eks-store-catalog-seed-${RUN_ID} --all-containers --tail=100 || true
-              exit 1
-            fi
-            echo "✅ Catalog Seed complete! Logs:"
-            kubectl logs -n eks-store job/eks-store-catalog-seed-${RUN_ID} --all-containers --tail=30 || true
-
-            echo "=== Deploying Microservice Workloads ==="
-            sed -i "s|407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-frontend:latest|${REGISTRY}/${PROJECT_NAME}-frontend:${TAG}|g" k8s/04-frontend.yaml
-            sed -i "s|407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-catalog:latest|${REGISTRY}/${PROJECT_NAME}-catalog:${TAG}|g" k8s/05-catalog.yaml
-            sed -i "s|407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-orders:latest|${REGISTRY}/${PROJECT_NAME}-orders:${TAG}|g" k8s/06-orders.yaml
-
-            kubectl apply -f k8s/04-frontend.yaml
-            kubectl apply -f k8s/05-catalog.yaml
-            kubectl apply -f k8s/06-orders.yaml
-
-            echo "Restarting deployments to ensure newest secrets and clean database connections..."
-            kubectl rollout restart deployment/frontend deployment/catalog-service deployment/order-service -n eks-store
-
-            echo "Awaiting deployment rollouts..."
-            kubectl rollout status deployment/frontend -n eks-store --timeout=120s
-            kubectl rollout status deployment/catalog-service -n eks-store --timeout=120s
-            kubectl rollout status deployment/order-service -n eks-store --timeout=120s
-
-          else
-            echo "=== Deploying using Helm ==="
-            STATUS=$(helm status eks-store -n eks-store -o json 2>/dev/null | jq -r '.info.status' || echo "")
-            if [ "$STATUS" = "failed" ] || [ "$STATUS" = "pending-install" ] || [ "$STATUS" = "pending-upgrade" ]; then
-              echo "Previous release is in '$STATUS' state; cleaning up before fresh install..."
-              helm uninstall eks-store -n eks-store || true
-              kubectl delete jobs -n eks-store --all --ignore-not-found=true || true
-              kubectl delete pods -n eks-store --all --force --grace-period=0 --ignore-not-found=true || true
-            fi
-
-            EXTRA_HELM_ARGS=""
-            if [ -n "$PUBLIC_SUBNETS" ]; then
-              EXTRA_HELM_ARGS="--set ingress.annotations.alb\\.ingress\\.kubernetes\\.io/subnets=${PUBLIC_SUBNETS}"
-            fi
-
-            helm upgrade --install eks-store helm/eks-store \
-              --namespace eks-store --create-namespace \
-              --values helm/eks-store/values.yaml \
-              --values helm/eks-store/values-${{ env.ENVIRONMENT }}.yaml \
-              --set images.frontend.repository="${REGISTRY}/${PROJECT_NAME}-frontend" \
-              --set images.catalog.repository="${REGISTRY}/${PROJECT_NAME}-catalog" \
-              --set images.orders.repository="${REGISTRY}/${PROJECT_NAME}-orders" \
-              --set images.seed.repository="${REGISTRY}/${PROJECT_NAME}-seed" \
-              --set images.frontend.tag="${TAG}" \
-              --set images.catalog.tag="${TAG}" \
-              --set images.orders.tag="${TAG}" \
-              --set images.seed.tag="${TAG}" \
-              --set aws.iamRoles.catalogRoleArn="${CATALOG_ROLE}" \
-              --set aws.iamRoles.orderRoleArn="${ORDER_ROLE}" \
-              --set aws.iamRoles.dbJobRoleArn="${DB_JOB_ROLE}" \
-              --set aws.s3.assetsBucketName="${ASSETS_BUCKET}" \
-              $EXTRA_HELM_ARGS \
-              --wait --timeout 5m
-          fi
-
-      - name: Set up Python for Smoke Testing
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install Test Client
-        run: pip install httpx
-
-      - name: Await ALB Ingress Ready & Execute Smoke Tests
+          ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          python scripts/upload_s3.py --bucket "eks-store-assets-${ENVIRONMENT}-${ACCOUNT}" --region "$AWS_REGION" --confirm
+      - name: Live acceptance test (wait for healthy ALB targets)
         run: |
-          echo "Resolving ALB Ingress Hostname..."
-          ALB_HOSTNAME=""
-          for i in {1..36}; do
-            ALB_HOSTNAME=$(kubectl get ingress eks-store-ingress -n eks-store -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-            if [ -n "$ALB_HOSTNAME" ]; then
-              break
+          set -euo pipefail
+          for attempt in {1..40}; do
+            HOST=$(kubectl get ingress eks-store-ingress -n eks-store -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+            if [[ -n "$HOST" ]] && python scripts/smoke_test.py --url "http://$HOST"; then
+              echo "Application verified: http://$HOST" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
             fi
-            echo "Waiting for ALB hostname to be assigned... ($i/36)"
-            kubectl get ingress eks-store-ingress -n eks-store || true
-            sleep 10
+            sleep 15
           done
-
-          if [ -z "$ALB_HOSTNAME" ]; then
-            echo "ALB Ingress Hostname could not be resolved within timeout."
-            kubectl describe ingress eks-store-ingress -n eks-store || true
-            exit 1
-          fi
-
-          echo "============================================================"
-          echo "🎉 APPLICATION LOAD BALANCER IS LIVE!"
-          echo "ALB URL: http://${ALB_HOSTNAME}"
-          echo "============================================================"
-          echo "### 🚀 Application Load Balancer Live URL" >> $GITHUB_STEP_SUMMARY
-          echo "[http://${ALB_HOSTNAME}](http://${ALB_HOSTNAME})" >> $GITHUB_STEP_SUMMARY
-
-          python scripts/smoke_test.py --url "http://$ALB_HOSTNAME"
-
-      - name: Diagnostic Dumps on Failure
+          exit 1
+      - name: Capture failure evidence
         if: failure()
-        run: |
-          echo "=== Ingress Details & Events ==="
-          kubectl describe ingress -n eks-store eks-store-ingress || true
-          echo "=== Ingress Classes ==="
-          kubectl get ingressclass || true
-          echo "=== AWS Load Balancer Controller Pods ==="
-          kubectl get pods -n kube-system -l "app.kubernetes.io/name=aws-load-balancer-controller" || true
-          echo "=== AWS Load Balancer Controller Logs ==="
-          kubectl logs -n kube-system -l "app.kubernetes.io/name=aws-load-balancer-controller" --tail=100 || true
-          echo "=== Pods in eks-store ==="
-          kubectl get pods -n eks-store -o wide || true
-          echo "=== Jobs in eks-store ==="
-          kubectl get jobs -n eks-store || true
-          echo "=== Describe Jobs in eks-store ==="
-          kubectl describe jobs -n eks-store || true
-          echo "=== Events in eks-store ==="
-          kubectl get events -n eks-store --sort-by='.lastTimestamp' || true
-          echo "=== Detailed Pod Status & Events ==="
-          kubectl describe pods -n eks-store || true
-          echo "=== Container Logs ==="
-          for p in $(kubectl get pods -n eks-store -o jsonpath='{.items[*].metadata.name}'); do
-            echo "--- Logs for pod $p ---"
-            kubectl logs -n eks-store "$p" --all-containers --tail=100 || true
-          done
-          echo "=== CSI Secrets Store Driver Pods in kube-system ==="
-          kubectl get pods -n kube-system -l "app in (secrets-store-csi-driver, csi-secrets-store-provider-aws)" || true
-          kubectl logs -n kube-system -l "app in (secrets-store-csi-driver, csi-secrets-store-provider-aws)" --tail=50 || true
+        run: bash scripts/diagnose.sh > deployment-diagnostics.txt 2>&1
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: deployment-diagnostics
+          path: deployment-diagnostics.txt
+          retention-days: 7

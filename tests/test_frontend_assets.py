@@ -110,6 +110,8 @@ def test_dockerfile_and_compose_integration():
         compose_content = f.read()
 
     assert "frontend:" in compose_content
-    assert ('"3000:80"' in compose_content or '"3000:8080"' in compose_content)
+    import yaml
+    compose = yaml.safe_load(compose_content)
+    assert any(str(port) in ["3000:80", "3000:8080"] for port in compose["services"]["frontend"]["ports"])
     assert "catalog-service" in compose_content
     assert "order-service" in compose_content

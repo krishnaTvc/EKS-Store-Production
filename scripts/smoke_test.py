@@ -53,7 +53,8 @@ def verify_health_endpoints(base_url: str) -> bool:
                 log(f"Catalog health reported non-UP status: {data}", "FAIL")
                 return False
         else:
-            log(f"Catalog health check status: {res_cat.status_code}", "WARN")
+            log(f"Catalog health check status: {res_cat.status_code}", "FAIL")
+            return False
 
         # 3. Order Service Health (via proxy)
         res_ord = client.get("/health/orders")
@@ -65,7 +66,8 @@ def verify_health_endpoints(base_url: str) -> bool:
                 log(f"Order health reported non-UP status: {data}", "FAIL")
                 return False
         else:
-            log(f"Order health check status: {res_ord.status_code}", "WARN")
+            log(f"Order health check status: {res_ord.status_code}", "FAIL")
+            return False
 
     return True
 

@@ -21,7 +21,7 @@ spec:
       labels:
         app.kubernetes.io/name: catalog-service
         app.kubernetes.io/component: catalog
-        environment: lab
+        environment: ${ENVIRONMENT}
     spec:
       serviceAccountName: catalog-service-sa
       terminationGracePeriodSeconds: 30
@@ -29,106 +29,95 @@ spec:
         runAsNonRoot: true
         runAsUser: 10001
       containers:
-        - name: catalog-service
-          image: 407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-catalog:latest
-          imagePullPolicy: Always
-          ports:
-            - name: http
-              containerPort: 8001
-              protocol: TCP
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-          resources:
-            requests:
-              cpu: 50m
-              memory: 64Mi
-            limits:
-              cpu: 250m
-              memory: 128Mi
-          env:
-            - name: APP_ENV
-              valueFrom:
-                configMapKeyRef:
-                  name: eks-store-config
-                  key: APP_ENV
-            - name: AWS_REGION
-              valueFrom:
-                configMapKeyRef:
-                  name: eks-store-config
-                  key: AWS_REGION
-            - name: S3_BUCKET_NAME
-              valueFrom:
-                configMapKeyRef:
-                  name: eks-store-config
-                  key: S3_BUCKET_NAME
-            - name: IMAGE_MODE
-              valueFrom:
-                configMapKeyRef:
-                  name: eks-store-config
-                  key: IMAGE_MODE
-            - name: S3_PRESIGNED_EXPIRATION_SECONDS
-              valueFrom:
-                configMapKeyRef:
-                  name: eks-store-config
-                  key: S3_PRESIGNED_EXPIRATION_SECONDS
-            - name: LOG_LEVEL
-              valueFrom:
-                configMapKeyRef:
-                  name: eks-store-config
-                  key: CATALOG_LOG_LEVEL
-            - name: DB_POOL_SIZE
-              valueFrom:
-                configMapKeyRef:
-                  name: eks-store-config
-                  key: CATALOG_DB_POOL_SIZE
-            - name: DB_MAX_OVERFLOW
-              valueFrom:
-                configMapKeyRef:
-                  name: eks-store-config
-                  key: CATALOG_DB_MAX_OVERFLOW
-            - name: DATABASE_SECRET_DIR
-              value: "/mnt/secrets-store"
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: catalog-db-sync-secret
-                  key: DATABASE_URL
-                  optional: true
-          startupProbe:
-            httpGet:
-              path: /health/live
-              port: http
-            initialDelaySeconds: 5
-            periodSeconds: 5
-            failureThreshold: 10
-          livenessProbe:
-            httpGet:
-              path: /health/live
-              port: http
-            periodSeconds: 15
-            timeoutSeconds: 3
-            failureThreshold: 3
-          readinessProbe:
-            httpGet:
-              path: /health/ready
-              port: http
-            periodSeconds: 10
-            timeoutSeconds: 3
-            failureThreshold: 2
-          volumeMounts:
-            - name: secrets-store
-              mountPath: "/mnt/secrets-store"
-              readOnly: true
-      volumes:
-        - name: secrets-store
-          csi:
-            driver: secrets-store.csi.k8s.io
-            readOnly: true
-            volumeAttributes:
-              secretProviderClass: eks-store-aws-secrets-catalog
+      - name: catalog-service
+        image: ${CATALOG_IMAGE}
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 8001
+          protocol: TCP
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+        env:
+        - name: APP_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: eks-store-config
+              key: APP_ENV
+        - name: AWS_REGION
+          valueFrom:
+            configMapKeyRef:
+              name: eks-store-config
+              key: AWS_REGION
+        - name: S3_BUCKET_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: eks-store-config
+              key: S3_BUCKET_NAME
+        - name: IMAGE_MODE
+          valueFrom:
+            configMapKeyRef:
+              name: eks-store-config
+              key: IMAGE_MODE
+        - name: S3_PRESIGNED_EXPIRATION_SECONDS
+          valueFrom:
+            configMapKeyRef:
+              name: eks-store-config
+              key: S3_PRESIGNED_EXPIRATION_SECONDS
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: eks-store-config
+              key: CATALOG_LOG_LEVEL
+        - name: DB_POOL_SIZE
+          valueFrom:
+            configMapKeyRef:
+              name: eks-store-config
+              key: CATALOG_DB_POOL_SIZE
+        - name: DB_MAX_OVERFLOW
+          valueFrom:
+            configMapKeyRef:
+              name: eks-store-config
+              key: CATALOG_DB_MAX_OVERFLOW
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: eks-store-catalog-db
+              key: DATABASE_URL
+        - name: PGSSLROOTCERT
+          value: /app/certs/rds-ca.pem
+        startupProbe:
+          httpGet:
+            path: /health/live
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          failureThreshold: 10
+        livenessProbe:
+          httpGet:
+            path: /health/live
+            port: http
+          periodSeconds: 15
+          timeoutSeconds: 3
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: http
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 2
+  progressDeadlineSeconds: 600
 ---
 apiVersion: v1
 kind: Service
@@ -141,9 +130,9 @@ metadata:
 spec:
   type: ClusterIP
   ports:
-    - port: 8001
-      targetPort: http
-      protocol: TCP
-      name: http
+  - port: 8001
+    targetPort: http
+    protocol: TCP
+    name: http
   selector:
     app.kubernetes.io/name: catalog-service

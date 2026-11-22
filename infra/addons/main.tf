@@ -56,7 +56,7 @@ provider "kubernetes" {
   cluster_ca_certificate = base64decode(local.resolved_cluster_ca)
   exec {
     api_version = "client.authentication.k8s.io/v1beta1"
-    args        = ["eks", "get-token", "--cluster-name", var.cluster_name]
+    args        = ["eks", "get-token", "--cluster-name", var.cluster_name, "--region", var.aws_region]
     command     = "aws"
   }
 }
@@ -67,7 +67,7 @@ provider "helm" {
     cluster_ca_certificate = base64decode(local.resolved_cluster_ca)
     exec {
       api_version = "client.authentication.k8s.io/v1beta1"
-      args        = ["eks", "get-token", "--cluster-name", var.cluster_name]
+      args        = ["eks", "get-token", "--cluster-name", var.cluster_name, "--region", var.aws_region]
       command     = "aws"
     }
   }

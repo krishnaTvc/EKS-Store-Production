@@ -1,15 +1,15 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: eks-store-catalog-seed
+  name: ${SEED_JOB}
   namespace: eks-store
   labels:
     app.kubernetes.io/name: eks-store
     app.kubernetes.io/component: catalog-seed
 spec:
-  ttlSecondsAfterFinished: 300
-  backoffLimit: 2
-  activeDeadlineSeconds: 180
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 1
+  activeDeadlineSeconds: 600
   template:
     metadata:
       labels:
@@ -17,15 +17,26 @@ spec:
         app.kubernetes.io/component: catalog-seed
     spec:
       serviceAccountName: catalog-service-sa
-      restartPolicy: OnFailure
+      restartPolicy: Never
       containers:
-        - name: catalog-seed
-          image: 407178840502.dkr.ecr.eu-north-1.amazonaws.com/eks-store-seed:latest
-          imagePullPolicy: Always
-          command: ["python", "scripts/import_catalog.py"]
-          env:
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: catalog-db-sync-secret
-                  key: DATABASE_URL
+      - name: catalog-seed
+        image: ${SEED_IMAGE}
+        imagePullPolicy: IfNotPresent
+        command:
+        - python
+        - scripts/import_catalog.py
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: eks-store-catalog-db
+              key: DATABASE_URL
+        - name: PGSSLROOTCERT
+          value: /app/certs/rds-ca.pem
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi

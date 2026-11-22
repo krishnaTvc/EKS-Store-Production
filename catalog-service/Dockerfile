@@ -17,6 +17,8 @@ FROM python:3.11-slim
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
     libpq5 \
     curl \
     && rm -rf /var/lib/apt/lists/* \
@@ -30,6 +32,11 @@ COPY catalog_app/ catalog_app/
 ENV PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
     PORT=8001
+
+RUN mkdir -p /app/certs && curl --fail --silent --show-error --location \
+    https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem \
+    -o /app/certs/rds-ca.pem
+ENV PGSSLROOTCERT=/app/certs/rds-ca.pem
 
 USER appuser
 
