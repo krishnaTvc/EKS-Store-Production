@@ -4,8 +4,22 @@ cd "$(dirname "$0")/.."
 export AWS_REGION="${AWS_REGION:-eu-north-1}" ENVIRONMENT="${ENVIRONMENT:-lab}"
 export CLUSTER_NAME="${CLUSTER_NAME:-eks-store-${ENVIRONMENT}}"
 : "${IMAGE_TAG:?Provide the Git SHA image tag built and pushed to ECR}"
-# Never fall back to another discovered cluster.
-aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_REGION" >/dev/null
+echo "Verifying target EKS cluster '$CLUSTER_NAME' in region '$AWS_REGION'..."
+AVAILABLE_CLUSTERS=$(aws eks list-clusters --region "$AWS_REGION" --query "clusters[*]" --output text 2>/dev/null || true)
+echo "Existing clusters in $AWS_REGION: [${AVAILABLE_CLUSTERS:-none}]"
+
+if ! aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_REGION" >/dev/null 2>&1; then
+  echo "=========================================================================="
+  echo "ERROR: Target EKS cluster '$CLUSTER_NAME' was not found in AWS region '$AWS_REGION'."
+  echo "Discovered clusters in region '$AWS_REGION': [${AVAILABLE_CLUSTERS:-none}]"
+  echo ""
+  echo "If your EKS cluster was deleted or has not yet been provisioned:"
+  echo "  1. Go to the 'Actions' tab in GitHub."
+  echo "  2. Select 'Terraform Infrastructure Manager' workflow."
+  echo "  3. Trigger workflow: stack='platform' (or 'all'), environment='$ENVIRONMENT', action='apply'."
+  echo "=========================================================================="
+  exit 1
+fi
 aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 REGISTRY="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
