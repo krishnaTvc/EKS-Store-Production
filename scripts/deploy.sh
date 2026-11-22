@@ -68,12 +68,12 @@ if [[ -n "$VPC_ID" && "$VPC_ID" != "None" ]]; then
     echo "Ensuring required kubernetes.io/role/elb=1 tag on subnets: $SUBNET_LIST"
     aws ec2 create-tags --region "$AWS_REGION" --resources $SUBNET_LIST --tags Key=kubernetes.io/role/elb,Value=1 || true
     echo "Annotating Ingress with explicit public subnets: $PUBLIC_SUBNETS"
-    python -c "
-import yaml
+    PUBLIC_SUBNETS="$PUBLIC_SUBNETS" python -c "
+import os, yaml
 path = '.rendered/07-ingress.yaml'
 with open(path) as f: doc = yaml.safe_load(f)
-doc.setdefault('metadata', {}).setdefault('annotations', {})['alb.ingress.kubernetes.io/subnets'] = '$PUBLIC_SUBNETS'
-with open(path, 'w') as f: yaml.dump(doc, f)
+doc.setdefault('metadata', {}).setdefault('annotations', {})['alb.ingress.kubernetes.io/subnets'] = os.environ['PUBLIC_SUBNETS']
+with open(path, 'w') as f: yaml.safe_dump(doc, f)
 "
   fi
 fi

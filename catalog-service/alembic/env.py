@@ -24,7 +24,7 @@ target_metadata = Base.metadata
 db_url = os.getenv("DATABASE_URL", settings.DATABASE_URL)
 if "sslmode=verify-full" in db_url:
     db_url = db_url.replace("sslmode=verify-full", "sslmode=require")
-config.set_main_option("sqlalchemy.url", db_url)
+config.set_main_option("sqlalchemy.url", db_url.replace("%", "%%"))
 
 
 def run_migrations_offline() -> None:
